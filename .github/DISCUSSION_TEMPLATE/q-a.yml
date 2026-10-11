@@ -1,0 +1,20 @@
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: Ask anything about using Plumbob Launcher. If you think you found a bug, please open an issue instead.
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried so far?
+  - type: input
+    id: version
+    attributes:
+      label: Launcher version
+      placeholder: "0.1.0"

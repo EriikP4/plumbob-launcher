@@ -1,0 +1,15 @@
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: Share an idea, even if it is not fully formed. Good ones may become feature requests.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What is your idea?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What problem would it solve or what would it make easier?

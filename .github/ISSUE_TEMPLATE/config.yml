@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/EriikP4/plumbob-launcher/discussions
+    about: Ask a question, share an idea or show your setup in Discussions.

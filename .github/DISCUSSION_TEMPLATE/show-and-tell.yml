@@ -1,0 +1,11 @@
+title: "[Show] "
+body:
+  - type: markdown
+    attributes:
+      value: Show how you use Plumbob Launcher. Your setups, instances and routines are welcome here.
+  - type: textarea
+    id: story
+    attributes:
+      label: What do you want to share?
+    validations:
+      required: true

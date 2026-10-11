@@ -1,0 +1,65 @@
+name: Bug report
+description: Something does not work as expected
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the launcher
+        2. Click on ...
+        3. See the error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Launcher version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Game platform
+      options:
+        - Steam
+        - EA app
+        - Epic Games
+        - Custom command
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Launcher language
+      options:
+        - English
+        - Spanish
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Open Settings, run the diagnostics and paste the result here. It helps a lot with folder, OneDrive and access denied errors.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, error messages or details about your mods and instances.
