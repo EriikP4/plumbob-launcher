@@ -4,6 +4,8 @@ use s4im_engine::{
     ArchivedInstance, Config, Diagnostics, EngineError, ImportMode, InstanceKind, InstanceSummary, Platform, SaveInfo, SessionEnd,
     DeleteStats, GameFolderCheck, GameOptions, ModDiff, ModFile, ModScan, Role, Genre, Health, RootCheck, CacheItem, ClearReport, MergeReport, SpaceEntry, Settings, Shot, SnapshotInfo, SnapshotKind, Transfer, TrayDisable,
 };
+mod presence;
+
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -875,6 +877,11 @@ fn watch_game(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_presence(state: presence::UiState) {
+    presence::set_state(state);
+}
+
+#[tauri::command]
 fn cancel_watch() {
     CANCEL_WATCH.store(true, Ordering::SeqCst);
 }
@@ -893,6 +900,7 @@ fn log_panics() {
 
 fn main() {
     log_panics();
+    presence::start();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -956,7 +964,8 @@ fn main() {
             open_s4mm,
             s4mm_running,
             watch_game,
-            cancel_watch
+            cancel_watch,
+            set_presence
         ])
         .run(tauri::generate_context!())
         .expect("error while running Plumbob Launcher");

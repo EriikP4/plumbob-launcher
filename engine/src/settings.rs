@@ -37,6 +37,19 @@ pub struct ShotsSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+pub struct PresenceSettings {
+    pub enabled: bool,
+    pub hide_numbers: bool,
+}
+
+impl Default for PresenceSettings {
+    fn default() -> Self {
+        PresenceSettings { enabled: true, hide_numbers: false }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct BootSettings {
     pub animation: bool,
     pub sound: bool,
@@ -84,6 +97,7 @@ pub struct Settings {
     pub theme: ThemeSettings,
     pub boot: BootSettings,
     pub shots: ShotsSettings,
+    pub presence: PresenceSettings,
     pub tray_sync_default: bool,
     pub auto_snapshots: bool,
     pub hide_update_notice: bool,
@@ -107,6 +121,7 @@ impl Default for Settings {
             theme: ThemeSettings::default(),
             boot: BootSettings::default(),
             shots: ShotsSettings::default(),
+            presence: PresenceSettings::default(),
             tray_sync_default: false,
             auto_snapshots: true,
             hide_update_notice: false,

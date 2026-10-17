@@ -15,5 +15,5 @@
     ],
     "security": { "csp": null, "assetProtocol": { "enable": true, "scope": [] } }
   },
-  "bundle": { "active": true, "targets": ["nsis"], "icon": ["icons/icon.ico"], "windows": { "nsis": { "installerIcon": "icons/setup.ico", "languages": ["English", "Spanish"], "displayLanguageSelector": true } } }
+  "bundle": { "active": true, "publisher": "EriikP4", "homepage": "https://github.com/EriikP4/plumbob-launcher", "targets": ["nsis"], "icon": ["icons/icon.ico"], "windows": { "nsis": { "installerIcon": "icons/setup.ico", "languages": ["English", "Spanish"], "displayLanguageSelector": true } } }
 }

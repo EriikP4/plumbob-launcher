@@ -180,7 +180,7 @@ function Player({ audio, track, genre, isPlaying, onToggle, onPrev, onNext }: {
   );
 }
 
-export default function MusicDialog({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+export default function MusicDialog({ instance, onClose, onCount }: { instance: Instance; onClose: () => void; onCount?: (n: number) => void }) {
   const { t, msg, size, settings, save } = useSettings();
   const [welcome, setWelcome] = useState(!settings.musicWelcomeSeen);
   const [genres, setGenres] = useState<Genre[] | null>(null);
@@ -206,6 +206,10 @@ export default function MusicDialog({ instance, onClose }: { instance: Instance;
   }, [load]);
 
   const current = genres?.find((g) => g.name === selected) ?? null;
+
+  useEffect(() => {
+    if (genres) onCount?.(genres.reduce((n, g) => n + g.tracks.length, 0));
+  }, [genres, onCount]);
 
   const start = useCallback((track: Track, genre: string, tracks: Track[]) => {
     queue.current = tracks;

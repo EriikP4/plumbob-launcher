@@ -97,6 +97,18 @@ export default function SettingsView({ onBack, onSetup }: { onBack: () => void; 
       </section>
 
       <section className="card">
+        <h2>{t("settings.presence")}</h2>
+        <label className="check">
+          <input type="checkbox" checked={settings.presence.enabled} onChange={(e) => set({ presence: { ...settings.presence, enabled: e.target.checked } })} />
+          <span>{t("settings.presenceEnable")}</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.presence.hideNumbers} disabled={!settings.presence.enabled} onChange={(e) => set({ presence: { ...settings.presence, hideNumbers: e.target.checked } })} />
+          <span>{t("settings.presenceHide")}</span>
+        </label>
+      </section>
+
+      <section className="card">
         <h2>{t("settings.platform")}</h2>
         <PlatformFields value={settings} env={env} onChange={(next) => void save(next)} />
       </section>

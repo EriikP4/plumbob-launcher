@@ -697,3 +697,16 @@ img, svg, a { -webkit-user-drag: none; }
 .play .spin { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; vertical-align: -1px; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .play .ripple, .play.pressed, .play .spin { animation: none; } .play .ripple { display: none; } }
+
+.modwarn-list { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; }
+.modwarn-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.modwarn-item h3 { margin: 0; font: 600 14px var(--f-display); display: flex; align-items: center; gap: 8px; }
+.modwarn-item p { font-size: 13px; }
+.modwarn-item .modwarn-fix { color: var(--fg); }
+.modwarn-files { margin: 0; padding-left: 18px; font: 12px var(--f-mono); color: var(--muted); display: flex; flex-direction: column; gap: 2px; word-break: break-all; }
+.modwarn-files .more { list-style: none; margin-left: -18px; font-style: italic; }
+.fix { background: #2fbf71; color: #04210f; border: 0; border-radius: 8px; padding: 8px 16px; font: 700 13px var(--f-display); box-shadow: 0 0 0 1px rgba(47, 191, 113, .6), 0 0 18px rgba(47, 191, 113, .65); transition: box-shadow .2s, filter .2s, transform .15s; }
+.fix:hover { filter: brightness(1.1); box-shadow: 0 0 0 3px rgba(47, 191, 113, .3), 0 0 28px rgba(47, 191, 113, .9); }
+.fix:active { transform: translateY(1px) scale(.98); }
+.ghost.ignore { color: #e5646a; border-color: rgba(229, 100, 106, .45); }
+.ghost.ignore:hover { color: #ff7b81; border-color: #e5646a; }

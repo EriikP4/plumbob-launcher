@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
-  ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
+  PresenceState, ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
 } from "./types";
 import { INSTANCES, SAVES, SNAPSHOTS } from "./sample";
 
@@ -71,6 +71,7 @@ export interface Backend {
   play(code: string, mode: LaunchMode): Promise<void>;
   openS4mm(code: string | null): Promise<void>;
   s4mmRunning(): Promise<boolean>;
+  setPresence(state: PresenceState): Promise<void>;
   watchGame(): Promise<void>;
   cancelWatch(): Promise<void>;
   onGameStarted(cb: () => void): Promise<() => void>;
@@ -198,6 +199,7 @@ const sampleSettings: Settings = {
   theme: { preset: "plumbob", accent: null, animations: true, custom: {} },
   boot: { animation: true, sound: true },
   shots: { qualityBadges: false },
+  presence: { enabled: true, hideNumbers: false },
   traySyncDefault: false,
   autoSnapshots: true,
   hideUpdateNotice: false,
@@ -326,6 +328,7 @@ export const sampleBackend: Backend = {
   },
   openS4mm: async () => undefined,
   s4mmRunning: async () => false,
+  setPresence: async () => undefined,
   watchGame: async () => undefined,
   cancelWatch: async () => undefined,
   onGameStarted: async () => () => undefined,
@@ -402,6 +405,7 @@ export const tauriBackend: Backend = {
   play: async (code, mode) => void (await call("play", { code, mode })),
   openS4mm: async (code) => void (await call("open_s4mm", { code })),
   s4mmRunning: () => call<boolean>("s4mm_running"),
+  setPresence: (state) => call<void>("set_presence", { state }),
   watchGame: async () => void (await call("watch_game")),
   cancelWatch: async () => void (await call("cancel_watch")),
   onGameStarted: (cb) => listen<string>("game-started", () => cb()),

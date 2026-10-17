@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backend } from "./lib/api";
 import { useSettings } from "./lib/settings";
-import type { Instance, LaunchMode, SaveInfo, Snapshot, Status } from "./lib/types";
+import type { HealthWarning, Instance, LaunchMode, SaveInfo, Snapshot, Status } from "./lib/types";
 import Rail from "./components/Rail";
 import HeroArt from "./components/HeroArt";
 import PlayBar from "./components/PlayBar";
@@ -10,6 +10,7 @@ import ShotsView from "./components/ShotsView";
 import { EditDialog, RestoreDialog } from "./components/InstanceDialogs";
 import { compareVersions, newestVersion } from "./lib/format";
 import { assetUrl } from "./lib/assets";
+import ModWarnDialog from "./components/ModWarnDialog";
 import { HealthCard, InfoCard } from "./components/InstancePanels";
 import NotesDialog from "./components/NotesView";
 import MusicDialog from "./components/MusicView";
@@ -50,6 +51,10 @@ export default function App() {
   const [rerun, setRerun] = useState(false);
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
+  const [modWarnings, setModWarnings] = useState<HealthWarning[] | null>(null);
+  const checking = useRef(false);
+  const [songs, setSongs] = useState(0);
+  const [shotTotals, setShotTotals] = useState({ count: 0, bytes: 0 });
 
   const fail = useCallback((e: unknown) => setError(msg(e instanceof Error ? e.message : String(e))), [msg]);
 
@@ -116,6 +121,23 @@ export default function App() {
     backend.listSaves(cur.id).then(setSaves).catch(() => setSaves([]));
   }, [cur?.id, tick]);
 
+  const section = music && cur ? "music" : view === "settings" ? "settings" : view === "shots" ? "screenshots" : view === "main" && cur ? "instance" : "menu";
+  const curMods = cur?.modCount ?? 0;
+  const curBytes = cur?.sizeBytes ?? 0;
+
+  useEffect(() => {
+    if (section !== "screenshots") return;
+    const load = () => backend.listShots(null).then((l) => setShotTotals({ count: l.length, bytes: l.reduce((n, s) => n + s.size, 0) })).catch(() => undefined);
+    void load();
+    const id = window.setInterval(load, 10000);
+    return () => window.clearInterval(id);
+  }, [section]);
+
+  useEffect(() => {
+    if (!setupDone) return;
+    backend.setPresence({ section, mods: curMods, bytes: curBytes, shots: shotTotals.count, shotBytes: shotTotals.bytes, songs }).catch(() => undefined);
+  }, [setupDone, section, curMods, curBytes, shotTotals, songs]);
+
   if (!setupDone || rerun) {
     return (
       <Wizard
@@ -137,8 +159,9 @@ export default function App() {
       {status.gameFolderChoose && <GameFolderDialog onDone={() => reload()} />}
       {!status.gameFolderChoose && status.needsSetup && <SetupDialog onDone={() => reload()} />}
       {hashing && cur && <HashDialog instance={cur} onClose={() => setHashing(false)} />}
-      {music && cur && <MusicDialog instance={cur} onClose={() => setMusic(false)} />}
-      {updateNotice && cur && <UpdateNotice onAccept={(hide) => { setUpdateNotice(false); if (hide) void save({ ...settings, hideUpdateNotice: true }); void start(); }} />}
+      {music && cur && <MusicDialog instance={cur} onClose={() => setMusic(false)} onCount={setSongs} />}
+      {updateNotice && cur && <UpdateNotice onAccept={(hide) => { setUpdateNotice(false); if (hide) void save({ ...settings, hideUpdateNotice: true }); void attempt(); }} />}
+      {modWarnings && cur && <ModWarnDialog warnings={modWarnings} canFix={settings.s4mm.enabled} onCancel={() => setModWarnings(null)} onIgnore={() => { setModWarnings(null); void start(); }} onFix={() => { setModWarnings(null); backend.openS4mm(cur.legacy ? null : cur.id).catch(fail); }} />}
       {notes && cur && <NotesDialog instance={cur} onClose={() => setNotes(false)} />}
       {editing && cur && <EditDialog instance={cur} active={status.activeId === cur.id} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
       {restoring && cur && <RestoreDialog instance={cur} snapshot={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); setTick((n) => n + 1); reload(); }} />}
@@ -185,10 +208,22 @@ export default function App() {
       fail(e);
     }
   };
+  const attempt = async () => {
+    if (playing || checking.current) return;
+    if (cur.legacy) return start();
+    checking.current = true;
+    try {
+      const health = await backend.instanceHealth(cur.id).catch(() => null);
+      if (health && health.warnings.length > 0) return setModWarnings(health.warnings);
+    } finally {
+      checking.current = false;
+    }
+    await start();
+  };
   const toggle = () => {
     if (playing) return;
     if (mismatch && !settings.hideUpdateNotice && !cur.legacy) return setUpdateNotice(true);
-    void start();
+    void attempt();
   };
   const stats: [string, string | number, boolean | undefined, string][] = [
     [t("stat.mods"), cur.modCount, undefined, "mods"], [t("stat.saves"), cur.saveCount, undefined, "saves"], [t("stat.tray"), cur.trayCount, cur.traySynced, "tray"],

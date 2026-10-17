@@ -126,11 +126,21 @@ export interface Settings {
   theme: ThemeSettings;
   boot: { animation: boolean; sound: boolean };
   shots: { qualityBadges: boolean };
+  presence: { enabled: boolean; hideNumbers: boolean };
   traySyncDefault: boolean;
   autoSnapshots: boolean;
   hideUpdateNotice: boolean;
   gameFolder: string | null;
   musicWelcomeSeen: boolean;
+}
+
+export interface PresenceState {
+  section: "menu" | "instance" | "settings" | "screenshots" | "music";
+  mods: number;
+  bytes: number;
+  shots: number;
+  shotBytes: number;
+  songs: number;
 }
 
 export interface Environment {
