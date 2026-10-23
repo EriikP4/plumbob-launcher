@@ -1,8 +1,11 @@
 import type { ThemeSettings } from "./types";
+import { backend } from "./api";
 
 export type Vars = Record<string, string>;
 
-export const PRESETS: Record<string, { scheme: "dark" | "light"; vars: Vars }> = {
+const EFFECT_LEVEL = { mica: 0.55, acrylic: 0.5 } as const;
+
+export const PRESETS: Record<string, { scheme: "dark" | "light"; vars: Vars; effect?: "mica" | "acrylic" }> = {
   plumbob: {
     scheme: "dark",
     vars: { "--bg": "#130f1c", "--panel": "#1b1528", "--panel2": "#241b36", "--line": "#34294d", "--fg": "#efeaf8", "--muted": "#a496c2", "--accent": "#a678ff", "--accent-fg": "#1a0836", "--warn": "#f0b64a", "--glow": "166, 120, 255" },
@@ -14,6 +17,16 @@ export const PRESETS: Record<string, { scheme: "dark" | "light"; vars: Vars }> =
   forest: {
     scheme: "dark",
     vars: { "--bg": "#0e1612", "--panel": "#14201a", "--panel2": "#1b2c23", "--line": "#2a4234", "--fg": "#e8f3ec", "--muted": "#8fb09b", "--accent": "#4ade80", "--accent-fg": "#052e16", "--warn": "#f0b64a", "--glow": "74, 222, 128" },
+  },
+  mica: {
+    scheme: "dark",
+    effect: "mica",
+    vars: { "--bg": "#1c1526", "--panel": "rgba(46, 35, 66, 0.9)", "--panel2": "rgba(66, 52, 94, 0.92)", "--line": "rgba(196, 161, 255, 0.24)", "--fg": "#f7f1ff", "--muted": "#c0b3da", "--accent": "#c4a1ff", "--accent-fg": "#1d0a3a", "--warn": "#f3c06a", "--glow": "196, 161, 255" },
+  },
+  acrylic: {
+    scheme: "dark",
+    effect: "acrylic",
+    vars: { "--bg": "#0a1630", "--panel": "rgba(16, 36, 70, 0.88)", "--panel2": "rgba(28, 56, 102, 0.9)", "--line": "rgba(150, 205, 255, 0.3)", "--fg": "#eef6ff", "--muted": "#a8c2e0", "--accent": "#6cc4ff", "--accent-fg": "#03182e", "--warn": "#f0c25a", "--glow": "108, 196, 255" },
   },
   light: {
     scheme: "light",
@@ -48,16 +61,29 @@ export const buildTheme = (t: ThemeSettings) => {
   for (const [k, v] of Object.entries(t.custom)) {
     if (SAFE_VAR.test(k) && typeof v === "string" && v.length <= 64 && !/[;{}<>]/.test(v)) vars[k] = v;
   }
-  return { vars, scheme: preset.scheme };
+  return { vars, scheme: preset.scheme, effect: preset.effect };
 };
 
 export const applyTheme = (t: ThemeSettings) => {
-  const { vars, scheme } = buildTheme(t);
+  const { vars, scheme, effect } = buildTheme(t);
   const root = document.documentElement;
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   root.style.colorScheme = scheme;
   root.style.background = vars["--bg"];
   root.classList.toggle("no-anim", !t.animations);
+  if (effect) root.dataset.fx = effect;
+  else delete root.dataset.fx;
+  const level = effect ? EFFECT_LEVEL[effect] : 0;
+  const bg = vars["--bg"];
+  if (level > 0 && isHex(bg)) {
+    root.style.setProperty("--bg-fx", `rgba(${rgb(bg).join(", ")}, ${(1 - level * 0.9).toFixed(2)})`);
+    root.style.background = "transparent";
+  } else {
+    root.style.removeProperty("--bg-fx");
+  }
+  const accent = vars["--accent"];
+  const tint = isHex(bg) && isHex(accent) ? ([...rgb(bg).map((c, i) => Math.round(c * 0.72 + rgb(accent)[i] * 0.28)), Math.round(60 + 50 * (1 - level))] as [number, number, number, number]) : null;
+  void backend.setWindowEffect(effect ?? "none", tint).catch(() => undefined);
   try {
     localStorage.setItem("plumbob-bg", vars["--bg"]);
   } catch {

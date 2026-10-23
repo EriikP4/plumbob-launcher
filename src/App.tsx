@@ -10,6 +10,9 @@ import ShotsView from "./components/ShotsView";
 import { EditDialog, RestoreDialog } from "./components/InstanceDialogs";
 import { compareVersions, newestVersion } from "./lib/format";
 import { assetUrl } from "./lib/assets";
+import HomeView from "./components/HomeView";
+import ActivateDialog from "./components/ActivateDialog";
+import IconBar from "./components/IconBar";
 import ModWarnDialog from "./components/ModWarnDialog";
 import { HealthCard, InfoCard } from "./components/InstancePanels";
 import NotesDialog from "./components/NotesView";
@@ -39,7 +42,7 @@ export default function App() {
   const [mode, setMode] = useState<LaunchMode>("offline");
   const [adding, setAdding] = useState(false);
   const [preset, setPreset] = useState<Instance | undefined>();
-  const [view, setView] = useState<"main" | "settings" | "shots" | "archived">("main");
+  const [view, setView] = useState<"home" | "main" | "settings" | "shots" | "archived">("home");
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState(false);
   const [music, setMusic] = useState(false);
@@ -54,6 +57,15 @@ export default function App() {
   const [modWarnings, setModWarnings] = useState<HealthWarning[] | null>(null);
   const checking = useRef(false);
   const [songs, setSongs] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [prevView, setPrevView] = useState<"home" | "main">("home");
+  const goTo = (next: "settings" | "shots" | "archived") => {
+    if (view === "home" || view === "main") setPrevView(view);
+    setView(next);
+  };
+  const [autoPlay, setAutoPlay] = useState<string | null>(null);
+  const toggleRef = useRef<(() => void) | null>(null);
+  const [activating, setActivating] = useState<Instance | null>(null);
   const [shotTotals, setShotTotals] = useState({ count: 0, bytes: 0 });
 
   const fail = useCallback((e: unknown) => setError(msg(e instanceof Error ? e.message : String(e))), [msg]);
@@ -101,6 +113,30 @@ export default function App() {
     return () => void off.then((f) => f());
   }, [reload, t, msg]);
 
+  useEffect(() => {
+    if (!setupDone || !curId) return;
+    backend.watchInstance(curId).catch(() => undefined);
+  }, [setupDone, curId]);
+
+  useEffect(() => {
+    const off = backend.onFoldersChanged((code) => {
+      if (code !== curId) return;
+      reload().catch(() => undefined);
+      setTick((n) => n + 1);
+    });
+    return () => void off.then((f) => f());
+  }, [curId, reload]);
+
+  const refresh = () => {
+    setRefreshing(true);
+    reload()
+      .catch(fail)
+      .finally(() => {
+        setTick((n) => n + 1);
+        window.setTimeout(() => setRefreshing(false), 900);
+      });
+  };
+
   const cur = instances.find((i) => i.id === curId) ?? null;
   const curKind = cur?.kind;
   const multiplayerOn = settings.multiplayer.enabled;
@@ -138,6 +174,13 @@ export default function App() {
     backend.setPresence({ section, mods: curMods, bytes: curBytes, shots: shotTotals.count, shotBytes: shotTotals.bytes, songs }).catch(() => undefined);
   }, [setupDone, section, curMods, curBytes, shotTotals, songs]);
 
+  useEffect(() => {
+    if (autoPlay && cur?.id === autoPlay && view === "main") {
+      setAutoPlay(null);
+      toggleRef.current?.();
+    }
+  }, [autoPlay, cur?.id, view]);
+
   if (!setupDone || rerun) {
     return (
       <Wizard
@@ -154,8 +197,14 @@ export default function App() {
     backend.saveOrder(ids).catch(fail);
   };
 
+  const askActivate = (i: Instance) => {
+    if (i.id === status.activeId) return setNotice(t("activate.already", { name: i.name }));
+    setActivating(i);
+  };
+
   const dialogs = (
     <>
+      {activating && <ActivateDialog instance={activating} onClose={() => setActivating(null)} onDone={() => { setNotice(t("activate.done", { name: activating.name })); setActivating(null); void reload(); }} />}
       {status.gameFolderChoose && <GameFolderDialog onDone={() => reload()} />}
       {!status.gameFolderChoose && status.needsSetup && <SetupDialog onDone={() => reload()} />}
       {hashing && cur && <HashDialog instance={cur} onClose={() => setHashing(false)} />}
@@ -171,29 +220,37 @@ export default function App() {
 
   const openAdd = () => { setPreset(undefined); setAdding(true); };
 
+  const nav = (next: "home" | "shots" | "archived" | "settings") => (next === "home" ? setView("home") : goTo(next));
+  const shell = (node: React.ReactNode) => (
+    <div className="shell">
+      <IconBar view={view} onNav={nav} />
+      <div className="shell-main">{node}</div>
+    </div>
+  );
+
   if (view === "settings") {
-    return <div className="app single"><SettingsView onBack={() => setView("main")} onSetup={() => setRerun(true)} /></div>;
+    return shell(<div className="app single"><SettingsView onBack={() => setView(prevView)} onSetup={() => setRerun(true)} /></div>);
   }
 
   if (view === "archived") {
-    return <div className="app"><ArchivedView onBack={() => setView("main")} onRestored={(id) => { setView("main"); void reload(id); }} /></div>;
+    return shell(<div className="app"><ArchivedView onBack={() => setView(prevView)} onRestored={(id) => { setView("main"); void reload(id); }} /></div>);
   }
 
   if (view === "shots") {
-    return <div className="app single"><ShotsView instances={instances} onBack={() => setView("main")} /></div>;
+    return shell(<div className="app single"><ShotsView instances={instances} onBack={() => setView(prevView)} /></div>);
   }
 
   if (!cur) {
-    return (
+    return shell(
       <div className="app">
-        <Rail instances={[]} activeId={null} selectedId="" locked={false} onSelect={() => undefined} onReorder={() => undefined} onAdd={openAdd} onSettings={() => setView("settings")} onShots={() => setView("shots")} onArchived={() => setView("archived")} />
+        <Rail instances={[]} activeId={null} selectedId="" locked={false} onSelect={() => undefined} onReorder={() => undefined} onAdd={openAdd} onActivate={askActivate} />
         <div className="content"><p className="note">{t("main.empty")}</p></div>
         {dialogs}
-      </div>
+      </div>,
     );
   }
 
-  const select = (i: Instance) => setCurId(i.id);
+  const select = (i: Instance) => { setCurId(i.id); setView("main"); };
   const start = async () => {
     if (playing) return;
     setError("");
@@ -233,6 +290,7 @@ export default function App() {
   const latest = gameVer ?? newest;
   const mismatch = !!cur.gameVersion && !!latest && compareVersions(cur.gameVersion, latest) < 0;
   const outdated = mismatch;
+  toggleRef.current = toggle;
   const snapshotNow = async () => {
     setError("");
     try {
@@ -246,15 +304,19 @@ export default function App() {
   const multiplayer = settings.multiplayer.enabled;
   const tag = [multiplayer ? (cur.kind === "solo" ? t("kind.solo") : t("kind.mp")) : "", cur.kind === "mp" && cur.role ? t(`role.${cur.role}`) : "", status.activeId === cur.id ? t("main.active") : ""].filter(Boolean).join(" · ");
 
-  return (
+  return shell(
     <div className="app">
-      <Rail instances={instances} activeId={status.activeId} selectedId={cur.id} locked={playing} onSelect={select} onAdd={openAdd} onReorder={reorder} onSettings={() => setView("settings")} onShots={() => setView("shots")} onArchived={() => setView("archived")} />
+      <Rail instances={instances} activeId={status.activeId} selectedId={view === "home" ? "" : cur.id} locked={playing} onSelect={select} onAdd={openAdd} onReorder={reorder} onActivate={askActivate} />
       <div className="content">
+        {view === "home" ? (
+          <HomeView instances={instances} latest={latest} onOpen={select} onPlay={(i) => { select(i); setAutoPlay(i.id); }} />
+        ) : (
         <main className="scroll" key={cur.id}>
           <section className="hero">
-            <HeroArt colors={cur.colors} />
+            <HeroArt colors={cur.colors} cover={settings.instanceIcons[cur.id] ? assetUrl(settings.instanceIcons[cur.id]) : undefined} />
             <div className="shade" />
             <div className="hero-actions">
+              <button className={"icon-btn tip below right" + (refreshing ? " refreshing" : "")} type="button" data-tip={t("main.refresh")} aria-label={t("main.refresh")} disabled={cur.legacy || refreshing} onClick={refresh}><Icon name="refresh" size={18} /></button>
               {multiplayerOn && cur.kind === "mp" && <button className="icon-btn tip below right" type="button" data-tip={t("main.hash")} aria-label={t("main.hash")} disabled={cur.legacy} onClick={() => setHashing(true)}><Icon name="shield" size={18} /></button>}
               <button className="icon-btn tip below right" type="button" data-tip={t("main.notes")} aria-label={t("main.notes")} disabled={cur.legacy} onClick={() => setNotes(true)}><Icon name="notes" size={18} /></button>
               <button className="icon-btn tip below right" type="button" data-tip={t("main.music")} aria-label={t("main.music")} disabled={cur.legacy} onClick={() => setMusic(true)}><Icon name="note" size={18} /></button>
@@ -274,7 +336,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="stats">
+          <div className={"stats" + (refreshing ? " loading" : "")}>
             {stats.map(([k, v, linked, icon]) => (
               <div className="stat" key={k}>
                 <label>
@@ -290,14 +352,14 @@ export default function App() {
             ))}
           </div>
 
-          <div className="cols">
+          <div className={"cols" + (refreshing ? " loading" : "")}>
             <InfoCard instance={cur} snaps={snaps} saves={saves} locked={playing} onSnapshot={snapshotNow} onRestore={setRestoring} onChanged={() => setTick((n) => n + 1)} latestVersion={latest} actions={
               <>
                 {settings.s4mm.enabled && <S4mmButton code={cur.id} legacy={cur.legacy} disabled={playing} onError={fail} />}
-                <button className="ghost" type="button" onClick={(e) => { burstAt(e.currentTarget); backend.openFolder(cur.id, "root").catch(fail); }}>{t("card.openFolder")}</button>
+                <button className="ghost" type="button" onClick={(e) => { burstAt(e.currentTarget); backend.openFolder(cur.id, "root").catch(fail); }}><Icon name="folder" size={14} /> {t("card.openFolder")}</button>
               </>
             } />
-            <HealthCard instance={cur} versionWarn={mismatch} />
+            <HealthCard key={`${cur.id}-${tick}`} instance={cur} versionWarn={mismatch} />
             <section className="card saves-card">
               <h2>{t("card.saves")}</h2>
               <div className="card-list">
@@ -321,7 +383,8 @@ export default function App() {
           {error && <p className="error" role="alert">{error}</p>}
           <p className="note">{backend.isSample ? t("main.noteSample") : t("main.noteLive")}</p>
         </main>
-        {cur.legacy ? (
+        )}
+        {view === "home" ? null : cur.legacy ? (
           <div className="bar legacy-bar">
             <div className="status">
               <b>{cur.name}</b>
@@ -335,6 +398,6 @@ export default function App() {
       </div>
       {dialogs}
       {notice && <div className="toast" role="status" key={notice}>{notice}</div>}
-    </div>
+    </div>,
   );
 }

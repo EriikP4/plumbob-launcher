@@ -3,6 +3,7 @@ mod archive;
 mod cache;
 #[cfg(windows)]
 mod diag;
+mod dbpf;
 mod discover;
 mod error;
 mod fsutil;
@@ -34,6 +35,7 @@ mod tray;
 pub use archive::{archive_instance, archive_root, list_archived, restore_archived, ArchivedInstance};
 #[cfg(windows)]
 pub use diag::{diagnose, Diagnostics};
+pub use dbpf::{read_thumbnails, thumbnail_to_png, Thumbnail, BUST_TYPES};
 pub use discover::{active_state, list_instances, read_game_version, read_instance_meta};
 pub use error::{EngineError, Result};
 pub use cache::{cache_items, clear_cache, CacheItem, ClearReport};

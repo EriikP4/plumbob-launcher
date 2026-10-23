@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { backend } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import { burstAt } from "../lib/checkfx";
+import logo from "../lib/s4mm-logo.svg";
 
 export default function S4mmButton({ code, legacy, disabled, onError }: { code: string; legacy: boolean; disabled: boolean; onError: (e: unknown) => void }) {
   const { t } = useSettings();
@@ -42,7 +43,13 @@ export default function S4mmButton({ code, legacy, disabled, onError }: { code: 
   };
 
   const label = running ? t("main.s4mmRunning") : opening ? t("main.s4mmOpening") : t("main.s4mmOpen");
+  const busy = running || opening;
   return (
-    <button className={"ghost" + (running || opening ? " busy" : "")} type="button" disabled={disabled || running || opening} onClick={open}>{label}</button>
+    <span className="s4mm-wrap">
+      <button className={"s4mm-btn tip left" + (busy ? " busy" : "")} type="button" data-tip={label} aria-label={label} disabled={disabled || busy} onClick={open}>
+        <img src={logo} alt="S4MM" draggable={false} />
+      </button>
+      {busy && <i className="s4mm-spin" aria-hidden="true" />}
+    </span>
   );
 }

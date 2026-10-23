@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
-  PresenceState, ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
+  Bust, EffectSupport, PresenceState, ProfileInfo, ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
 } from "./types";
 import { INSTANCES, SAVES, SNAPSHOTS } from "./sample";
 
@@ -72,6 +72,16 @@ export interface Backend {
   openS4mm(code: string | null): Promise<void>;
   s4mmRunning(): Promise<boolean>;
   setPresence(state: PresenceState): Promise<void>;
+  watchInstance(code: string): Promise<void>;
+  setActiveInstance(code: string): Promise<void>;
+  effectSupport(): Promise<EffectSupport>;
+  setWindowEffect(effect: string, color: [number, number, number, number] | null): Promise<void>;
+  profileInfo(source?: string): Promise<ProfileInfo>;
+  importIcon(name: string, path: string): Promise<string>;
+  toolIcon(id: string, path: string): Promise<string | null>;
+  launchTool(path: string): Promise<void>;
+  listBusts(code: string | null): Promise<Bust[]>;
+  onFoldersChanged(cb: (code: string) => void): Promise<() => void>;
   watchGame(): Promise<void>;
   cancelWatch(): Promise<void>;
   onGameStarted(cb: () => void): Promise<() => void>;
@@ -204,6 +214,9 @@ const sampleSettings: Settings = {
   autoSnapshots: true,
   hideUpdateNotice: false,
   gameFolder: null,
+  profile: { source: "windows", custom: null, name: null },
+  instanceIcons: {},
+  tools: [],
   musicWelcomeSeen: false,
 };
 
@@ -329,6 +342,16 @@ export const sampleBackend: Backend = {
   openS4mm: async () => undefined,
   s4mmRunning: async () => false,
   setPresence: async () => undefined,
+  watchInstance: async () => undefined,
+  setActiveInstance: async () => undefined,
+  effectSupport: async () => ({ mica: false, acrylic: false }),
+  setWindowEffect: async () => undefined,
+  profileInfo: async () => ({ name: "You", systemName: "You", image: null }),
+  importIcon: async (_name, path) => path,
+  toolIcon: async () => null,
+  launchTool: async () => undefined,
+  listBusts: async () => [],
+  onFoldersChanged: async () => () => undefined,
   watchGame: async () => undefined,
   cancelWatch: async () => undefined,
   onGameStarted: async () => () => undefined,
@@ -406,6 +429,16 @@ export const tauriBackend: Backend = {
   openS4mm: async (code) => void (await call("open_s4mm", { code })),
   s4mmRunning: () => call<boolean>("s4mm_running"),
   setPresence: (state) => call<void>("set_presence", { state }),
+  profileInfo: (source) => call<ProfileInfo>("profile_info", { source: source ?? null }),
+  importIcon: (name, path) => call<string>("import_icon", { name, path }),
+  toolIcon: (id, path) => call<string | null>("tool_icon", { id, path }),
+  launchTool: (path) => call<void>("launch_tool", { path }),
+  listBusts: (code) => call<Bust[]>("list_busts", { code }),
+  effectSupport: () => call<EffectSupport>("effect_support"),
+  setWindowEffect: (effect, color) => call<void>("set_window_effect", { effect, color }),
+  setActiveInstance: (code) => call<void>("set_active_instance", { code }),
+  watchInstance: (code) => call<void>("watch_instance", { code }),
+  onFoldersChanged: (cb) => listen<string>("folders-changed", (e) => cb(e.payload)),
   watchGame: async () => void (await call("watch_game")),
   cancelWatch: async () => void (await call("cancel_watch")),
   onGameStarted: (cb) => listen<string>("game-started", () => cb()),

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CLIENT_ID: &str = "1561091550904324267";
@@ -11,6 +11,7 @@ const POLL: Duration = Duration::from_secs(4);
 const COUNT_TTL: Duration = Duration::from_secs(30);
 
 static STATE: Mutex<Option<UiState>> = Mutex::new(None);
+static LAUNCHED: OnceLock<u64> = OnceLock::new();
 
 type Counts = Option<(Instant, String, u64, u64)>;
 
@@ -37,14 +38,18 @@ pub fn set_state(state: UiState) {
     *STATE.lock().unwrap() = Some(state);
 }
 
+fn launched() -> u64 {
+    *LAUNCHED.get_or_init(now)
+}
+
 pub fn start() {
+    launched();
     std::thread::spawn(run);
 }
 
 fn run() {
     let mut conn: Option<File> = None;
     let mut sent: Option<Option<Activity>> = None;
-    let mut s4mm_since: Option<u64> = None;
     let mut counts: Counts = None;
     let mut nonce = 0u64;
     loop {
@@ -55,15 +60,13 @@ fn run() {
             if s4im_engine::game_running() {
                 None
             } else if s4im_engine::process_running(s4im_engine::S4MM_PROCESS) {
-                let start = *s4mm_since.get_or_insert_with(now);
+                let start = launched();
                 Some(s4mm_activity(es, hide, start, &mut counts))
             } else {
-                s4mm_since = None;
                 counts = None;
                 Some(ui_activity(es, hide))
             }
         } else {
-            s4mm_since = None;
             None
         };
         if settings.presence.enabled || conn.is_some() {
@@ -127,7 +130,7 @@ fn ui_activity(es: bool, hide: bool) -> Activity {
         details: details.into(),
         state: (!hide).then_some(state),
         small: Some(small),
-        start: None,
+        start: Some(launched()),
     };
     match ui.section.as_str() {
         "instance" => numbered(
@@ -139,7 +142,7 @@ fn ui_activity(es: bool, hide: bool) -> Activity {
             details: pick(es, "Cambiando ajustes...", "Changing settings...").into(),
             state: crate::game_version().ok().flatten().map(|v| format!("{} {v}", pick(es, "Versión del juego:", "Game version:"))),
             small: Some("settings"),
-            start: None,
+            start: Some(launched()),
         },
         "screenshots" => {
             let count = if es { plural(ui.shots, "captura", "capturas") } else { plural(ui.shots, "screenshot", "screenshots") };
@@ -158,7 +161,7 @@ fn ui_activity(es: bool, hide: bool) -> Activity {
             details: pick(es, "En el menú principal", "In the main menu").into(),
             state: None,
             small: None,
-            start: None,
+            start: Some(launched()),
         },
     }
 }

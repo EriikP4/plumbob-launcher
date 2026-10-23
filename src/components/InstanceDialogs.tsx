@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
+import EditInstanceForm from "./EditInstanceForm";
 import { backend } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import type { Instance, Snapshot } from "../lib/types";
 import InstanceForm from "./InstanceForm";
 import DeleteFlow from "./DeleteFlow";
 
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Modal({ children, onClose, wide }: { children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true">{children}</div>
+      <div className={"dialog" + (wide ? " edit-dialog" : "")} role="dialog" aria-modal="true">{children}</div>
     </div>
   );
 }
@@ -253,43 +254,8 @@ export function EditDialog({ instance, active, onClose, onDone }: { instance: In
   }
 
   return (
-    <Modal onClose={onClose}>
-      {step === "edit" && (
-        <InstanceForm
-          title={t("edit.title")}
-          submitLabel={t("edit.save")}
-          lockCode
-          withRole={instance.kind === "mp"}
-          initial={{ name: instance.name, description: instance.description, code: instance.id, role: instance.role ?? null }}
-          onSubmit={async (v) => { await backend.updateInstance(instance.id, v.name, v.description, v.role); onDone(); }}
-          onSecondary={{ label: t("common.cancel"), run: onClose }}
-          extra={
-            <div className="choices one">
-              <button type="button" className="choice" onClick={() => setStep("duplicate")}>
-                <b>{t("edit.duplicate")}</b>
-                <small>{t("edit.duplicateHint")}</small>
-              </button>
-              <button type="button" className="choice" onClick={() => setStep(instance.traySynced ? "trayOff" : "trayOn")}>
-                <b>{instance.traySynced ? t("tray.disableBtn") : t("tray.enableBtn")}</b>
-                {!instance.traySynced && <small>{t("tray.enableHint")}</small>}
-              </button>
-              {settings.multiplayer.enabled && (
-                <button type="button" className="choice" onClick={() => setStep("convert")}>
-                  <b>{instance.kind === "solo" ? t("edit.convertMp") : t("edit.convertSolo")}</b>
-                </button>
-              )}
-              <div className="choice-row">
-                <button type="button" className="choice" onClick={() => setStep("archive")}>
-                  <b>{t("edit.archive")}</b>
-                </button>
-                <button type="button" className="choice danger-choice" onClick={() => setStep("delete")}>
-                  <b>{t("edit.delete")}</b>
-                </button>
-              </div>
-            </div>
-          }
-        />
-      )}
+    <Modal onClose={onClose} wide={step === "edit"}>
+      {step === "edit" && <EditInstanceForm instance={instance} onClose={onClose} onDone={onDone} onStep={setStep} />}
       {step === "duplicate" && (
         <InstanceForm
           title={t("edit.dupTitle")}

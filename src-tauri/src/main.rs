@@ -5,6 +5,7 @@ use s4im_engine::{
     DeleteStats, GameFolderCheck, GameOptions, ModDiff, ModFile, ModScan, Role, Genre, Health, RootCheck, CacheItem, ClearReport, MergeReport, SpaceEntry, Settings, Shot, SnapshotInfo, SnapshotKind, Transfer, TrayDisable,
 };
 mod presence;
+mod watcher;
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -145,8 +146,9 @@ fn get_status() -> Result<Status, String> {
 }
 
 #[tauri::command]
-fn list_instances() -> Result<Vec<InstanceSummary>, String> {
+fn list_instances(app: AppHandle) -> Result<Vec<InstanceSummary>, String> {
     let cfg = config()?;
+    allow_icons(&app);
     let mut list = s4im_engine::list_instances(&cfg.game_root).map_err(text)?;
     s4im_engine::apply_order(&mut list, &s4im_engine::load_order(&cfg.order_file));
     Ok(list)
@@ -690,6 +692,193 @@ fn open_folder(code: String, which: String) -> Result<(), String> {
     Ok(())
 }
 
+fn icons_dir() -> Result<PathBuf, String> {
+    settings_file()?
+        .parent()
+        .map(|p| p.join("icons"))
+        .ok_or_else(|| "err.documents".to_string())
+}
+
+fn allow_icons(app: &AppHandle) {
+    if let Ok(dir) = icons_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileInfo {
+    name: String,
+    system_name: String,
+    image: Option<String>,
+}
+
+fn windows_picture() -> Option<PathBuf> {
+    use std::os::windows::process::CommandExt;
+    let run = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    let who = run("whoami", &["/user", "/fo", "csv", "/nh"])?;
+    let sid = who.trim().rsplit(',').next()?.trim().trim_matches('"').to_string();
+    if !sid.starts_with("S-1-") {
+        return None;
+    }
+    let key = format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AccountPicture\Users\{sid}");
+    let out = run("reg", &["query", &key])?;
+    ["Image448", "Image240", "Image192", "Image96"].iter().find_map(|name| {
+        out.lines().find_map(|line| {
+            let line = line.trim();
+            let rest = line.strip_prefix(name)?.trim_start();
+            let path = rest.strip_prefix("REG_SZ")?.trim();
+            let p = PathBuf::from(path);
+            p.is_file().then_some(p)
+        })
+    })
+}
+
+#[tauri::command]
+async fn profile_info(app: AppHandle, source: Option<String>) -> Result<ProfileInfo, String> {
+    blocking(move || {
+        let s = settings()?;
+        allow_icons(&app);
+        let system_name = std::env::var("USERNAME").unwrap_or_default();
+        let name = s.profile.name.clone().map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| system_name.clone());
+        let chosen = source.unwrap_or_else(|| s.profile.source.clone());
+        let image = match chosen.as_str() {
+            "custom" => s.profile.custom.filter(|p| p.is_file()),
+            "none" => None,
+            _ => windows_picture(),
+        };
+        if let Some(parent) = image.as_ref().and_then(|p| p.parent()) {
+            let _ = app.asset_protocol_scope().allow_directory(parent, false);
+        }
+        Ok(ProfileInfo { name, system_name, image: image.map(|p| p.display().to_string()) })
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BustItem {
+    id: String,
+    path: String,
+}
+
+#[tauri::command]
+async fn list_busts(app: AppHandle, code: Option<String>) -> Result<Vec<BustItem>, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let code = code
+            .or_else(|| s4im_engine::active_instance_id(&cfg.game_root))
+            .ok_or_else(|| "err.notRegistered".to_string())?;
+        if !s4im_engine::valid_code(&code) {
+            return Err("err.codeInvalid".into());
+        }
+        let package = s4im_engine::instance_dir(&cfg.game_root, &code).join("localthumbcache.package");
+        if !package.is_file() {
+            return Ok(Vec::new());
+        }
+        let found = s4im_engine::read_thumbnails(&package, &s4im_engine::BUST_TYPES).map_err(text)?;
+        let dir = icons_dir()?.join("busts");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        allow_icons(&app);
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for item in found {
+            let hash = blake3::hash(&item.data).to_hex().to_string();
+            if !seen.insert(hash.clone()) {
+                continue;
+            }
+            let id = hash[..16].to_string();
+            let target = dir.join(format!("{id}.png"));
+            let Ok(png) = s4im_engine::thumbnail_to_png(&item.data) else { continue };
+            if std::fs::write(&target, &png).is_ok() {
+                out.push(BustItem { id, path: target.display().to_string() });
+            }
+        }
+        Ok(out)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn tool_icon(app: AppHandle, id: String, path: String) -> Result<Option<String>, String> {
+    blocking(move || {
+        use std::os::windows::process::CommandExt;
+        if !s4im_engine::valid_code(&id) {
+            return Err("err.codeInvalid".into());
+        }
+        let source = PathBuf::from(&path);
+        if !source.is_file() {
+            return Ok(None);
+        }
+        let dir = icons_dir()?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        allow_icons(&app);
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let target = dir.join(format!("tool-{id}-{stamp}.png"));
+        let script = "Add-Type -AssemblyName System.Drawing; $i = [System.Drawing.Icon]::ExtractAssociatedIcon($env:S4IM_TOOL); if ($i) { $i.ToBitmap().Save($env:S4IM_OUT, [System.Drawing.Imaging.ImageFormat]::Png) }";
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script])
+            .env("S4IM_TOOL", &source)
+            .env("S4IM_OUT", &target)
+            .creation_flags(0x0800_0000)
+            .output();
+        Ok(target.is_file().then(|| target.display().to_string()))
+    })
+    .await
+}
+
+#[tauri::command]
+fn launch_tool(path: String) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let file = PathBuf::from(&path);
+    if !file.is_file() || path.contains('"') || path.contains('%') {
+        return Err(text(EngineError::NotFound(path)));
+    }
+    let mut command = std::process::Command::new("cmd");
+    command.raw_arg(format!("/C start \"\" \"{path}\"")).creation_flags(0x0800_0000);
+    if let Some(parent) = file.parent() {
+        command.current_dir(parent);
+    }
+    command.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn import_icon(app: AppHandle, name: String, path: String) -> Result<String, String> {
+    blocking(move || {
+        let valid = name == "profile" || s4im_engine::valid_code(&name);
+        if !valid {
+            return Err("err.codeInvalid".into());
+        }
+        let source = PathBuf::from(&path);
+        let ext = source
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg"))
+            .ok_or_else(|| text(EngineError::Invalid("source not allowed".into())))?;
+        let meta = std::fs::metadata(&source).map_err(|e| e.to_string())?;
+        if !meta.is_file() || meta.len() > 12 * 1024 * 1024 {
+            return Err(text(EngineError::Invalid("source not allowed".into())));
+        }
+        let dir = icons_dir()?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let target = dir.join(format!("{name}-{}.{ext}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
+        std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
+        allow_icons(&app);
+        Ok(target.display().to_string())
+    })
+    .await
+}
+
 fn allow_assets(app: &AppHandle, cfg: &Config) {
     let scope = app.asset_protocol_scope();
     let _ = scope.allow_directory(&cfg.game_root, true);
@@ -877,6 +1066,71 @@ fn watch_game(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn set_active_instance(code: String) -> Result<(), String> {
+    blocking(move || {
+        let cfg = config()?;
+        if WATCHING.load(Ordering::SeqCst) {
+            return Err("err.sessionBusy".into());
+        }
+        s4im_engine::activate_instance(&cfg.game_root, &cfg.snapshots_root, &code, true).map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+fn watch_instance(app: AppHandle, code: String) -> Result<(), String> {
+    let cfg = config()?;
+    if !s4im_engine::valid_code(&code) {
+        return Err("err.codeInvalid".into());
+    }
+    let dir = s4im_engine::instance_dir(&cfg.game_root, &code);
+    watcher::watch(app, code, vec![dir.join("Mods"), dir.join("Tray")]);
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct EffectSupport {
+    mica: bool,
+    acrylic: bool,
+}
+
+fn windows_build() -> u32 {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("reg")
+        .args(["query", r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "/v", "CurrentBuildNumber"])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().last().and_then(|v| v.parse().ok()))
+        .unwrap_or(0)
+}
+
+#[tauri::command]
+fn effect_support() -> EffectSupport {
+    let build = windows_build();
+    EffectSupport { mica: build >= 22000, acrylic: build >= 17134 }
+}
+
+#[tauri::command]
+fn set_window_effect(window: tauri::WebviewWindow, effect: String, color: Option<[u8; 4]>) -> Result<(), String> {
+    let support = effect_support();
+    let config = match effect.as_str() {
+        "mica" if support.mica => Some(tauri::window::EffectsBuilder::new().effect(tauri::window::Effect::MicaDark).build()),
+        "acrylic" if support.acrylic => {
+            let [r, g, b, a] = color.unwrap_or([14, 26, 51, 90]);
+            Some(
+                tauri::window::EffectsBuilder::new()
+                    .effect(tauri::window::Effect::Acrylic)
+                    .color(tauri::window::Color(r, g, b, a))
+                    .build(),
+            )
+        }
+        _ => None,
+    };
+    window.set_effects(config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn set_presence(state: presence::UiState) {
     presence::set_state(state);
 }
@@ -965,7 +1219,16 @@ fn main() {
             s4mm_running,
             watch_game,
             cancel_watch,
-            set_presence
+            set_presence,
+            effect_support,
+            set_window_effect,
+            profile_info,
+            import_icon,
+            tool_icon,
+            launch_tool,
+            list_busts,
+            watch_instance,
+            set_active_instance
         ])
         .run(tauri::generate_context!())
         .expect("error while running Plumbob Launcher");

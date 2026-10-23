@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { backend } from "./api";
 import type { Settings } from "./types";
-import { applyTheme } from "./themes";
+import { PRESETS, applyTheme } from "./themes";
 import { translate, translateMessage, type Key } from "../i18n";
 
 type Vars = Record<string, string | number>;
@@ -63,7 +63,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const latest = useRef<Settings | null>(null);
 
   useEffect(() => {
-    backend.getSettings().then(setSettings).catch((e) => setFailed(String(e)));
+    backend.getSettings().then((s) => setSettings(s.theme.preset in PRESETS ? s : { ...s, theme: { ...s.theme, preset: "plumbob" } })).catch((e) => setFailed(String(e)));
   }, []);
 
   const theme = settings?.theme;

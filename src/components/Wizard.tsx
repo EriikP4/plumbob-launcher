@@ -6,9 +6,10 @@ import type { Environment, Settings } from "../lib/types";
 import PathField from "./PathField";
 import PlatformFields from "./PlatformFields";
 import Backdrop from "./Backdrop";
+import ProfileFields from "./ProfileFields";
 
-type Step = "lang" | "welcome" | "platform" | "s4mm" | "mp" | "tray" | "summary";
-const STEPS: Step[] = ["lang", "welcome", "platform", "s4mm", "mp", "tray", "summary"];
+type Step = "lang" | "welcome" | "profile" | "platform" | "s4mm" | "mp" | "tray" | "summary";
+const STEPS: Step[] = ["lang", "welcome", "profile", "platform", "s4mm", "mp", "tray", "summary"];
 
 interface Props {
   onDone: () => void;
@@ -51,7 +52,7 @@ export default function Wizard({ onDone, onCancel }: Props) {
   const finish = async () => {
     setError("");
     try {
-      await save({ ...draft, setupDone: true });
+      await save({ ...draft, profile: settings.profile, setupDone: true });
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -97,6 +98,14 @@ export default function Wizard({ onDone, onCancel }: Props) {
             <>
               <h2>{t("wizard.welcomeTitle")}</h2>
               <p>{t("wizard.welcomeBody")}</p>
+            </>
+          )}
+
+          {step === "profile" && (
+            <>
+              <h2>{t("wizard.profileTitle")}</h2>
+              <p>{t("wizard.profileBody")}</p>
+              <ProfileFields />
             </>
           )}
 

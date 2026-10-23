@@ -50,6 +50,30 @@ impl Default for PresenceSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+pub struct ProfileSettings {
+    pub source: String,
+    pub custom: Option<PathBuf>,
+    pub name: Option<String>,
+}
+
+impl Default for ProfileSettings {
+    fn default() -> Self {
+        ProfileSettings { source: "windows".into(), custom: None, name: None }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ToolEntry {
+    pub id: String,
+    pub name: String,
+    pub path: PathBuf,
+    pub icon: Option<PathBuf>,
+    pub custom_icon: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct BootSettings {
     pub animation: bool,
     pub sound: bool,
@@ -98,6 +122,9 @@ pub struct Settings {
     pub boot: BootSettings,
     pub shots: ShotsSettings,
     pub presence: PresenceSettings,
+    pub profile: ProfileSettings,
+    pub instance_icons: BTreeMap<String, PathBuf>,
+    pub tools: Vec<ToolEntry>,
     pub tray_sync_default: bool,
     pub auto_snapshots: bool,
     pub hide_update_notice: bool,
@@ -122,6 +149,9 @@ impl Default for Settings {
             boot: BootSettings::default(),
             shots: ShotsSettings::default(),
             presence: PresenceSettings::default(),
+            profile: ProfileSettings::default(),
+            instance_icons: BTreeMap::new(),
+            tools: Vec::new(),
             tray_sync_default: false,
             auto_snapshots: true,
             hide_update_notice: false,

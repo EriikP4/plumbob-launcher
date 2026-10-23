@@ -131,6 +131,9 @@ export interface Settings {
   autoSnapshots: boolean;
   hideUpdateNotice: boolean;
   gameFolder: string | null;
+  profile: { source: "windows" | "custom" | "none"; custom: string | null; name: string | null };
+  instanceIcons: Record<string, string>;
+  tools: Tool[];
   musicWelcomeSeen: boolean;
 }
 
@@ -141,6 +144,30 @@ export interface PresenceState {
   shots: number;
   shotBytes: number;
   songs: number;
+}
+
+export interface Tool {
+  id: string;
+  name: string;
+  path: string;
+  icon: string | null;
+  customIcon: boolean;
+}
+
+export interface Bust {
+  id: string;
+  path: string;
+}
+
+export interface EffectSupport {
+  mica: boolean;
+  acrylic: boolean;
+}
+
+export interface ProfileInfo {
+  name: string;
+  systemName: string;
+  image: string | null;
 }
 
 export interface Environment {

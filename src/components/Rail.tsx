@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSettings } from "../lib/settings";
 import type { Instance } from "../lib/types";
+import InstanceThumb from "./InstanceThumb";
 
 interface Props {
   instances: Instance[];
@@ -10,9 +11,7 @@ interface Props {
   onSelect: (i: Instance) => void;
   onAdd: () => void;
   onReorder: (ids: string[]) => void;
-  onSettings: () => void;
-  onShots: () => void;
-  onArchived: () => void;
+  onActivate: (i: Instance) => void;
 }
 
 interface GroupProps {
@@ -24,10 +23,11 @@ interface GroupProps {
   locked: boolean;
   onSelect: (i: Instance) => void;
   onMove: (from: string, to: string) => void;
+  onActivate: (i: Instance) => void;
   pending?: boolean;
 }
 
-function Group({ title, items, editing, activeId, selectedId, locked, onSelect, onMove, pending }: GroupProps) {
+function Group({ title, items, editing, activeId, selectedId, locked, onSelect, onMove, onActivate, pending }: GroupProps) {
   const { t, when } = useSettings();
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -50,13 +50,14 @@ function Group({ title, items, editing, activeId, selectedId, locked, onSelect, 
             draggable={editing && !locked}
             disabled={locked && d.id !== selectedId}
             onClick={() => onSelect(d)}
+            onDoubleClick={() => { if (!editing && !locked && !d.legacy) onActivate(d); }}
             onKeyDown={(e) => step(e, i)}
             onDragStart={(e) => { setDragId(d.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", d.id); }}
             onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverId(d.id); } }}
             onDrop={(e) => { e.preventDefault(); if (dragId && dragId !== d.id) onMove(dragId, d.id); setDragId(null); setOverId(null); }}
             onDragEnd={() => { setDragId(null); setOverId(null); }}>
             {editing && <span className="grip" aria-hidden="true">⋮⋮</span>}
-            <span className="thumb" style={{ background: `linear-gradient(135deg,${d.colors[0]},${d.colors[1]})` }}>{d.name[0]}</span>
+            <InstanceThumb instance={d} />
             <span className="txt"><b>{d.name}</b><span className="sub">{d.modCount} mods · {when(d.lastPlayedAt)}</span></span>
             {d.id === activeId && <span className="active-dot" title={t("main.active")} aria-label={t("main.active")} />}
           </button>
@@ -96,17 +97,14 @@ export default function Rail(props: Props) {
         <div>Plumbob Launcher<small>{t("app.tagline")}</small></div>
       </div>
       {groups.map((g, i) => (
-        <Group key={i} title={g.title} items={g.items} editing={editing} activeId={props.activeId} selectedId={props.selectedId} locked={props.locked} onSelect={props.onSelect} onMove={move(i)} />
+        <Group key={i} title={g.title} items={g.items} editing={editing} activeId={props.activeId} selectedId={props.selectedId} locked={props.locked} onSelect={props.onSelect} onMove={move(i)} onActivate={props.onActivate} />
       ))}
       {pending.length > 0 && (
-        <Group title={t("rail.legacy")} items={pending} editing={false} activeId={props.activeId} selectedId={props.selectedId} locked={props.locked} onSelect={props.onSelect} onMove={() => undefined} pending />
+        <Group title={t("rail.legacy")} items={pending} editing={false} activeId={props.activeId} selectedId={props.selectedId} locked={props.locked} onSelect={props.onSelect} onMove={() => undefined} onActivate={props.onActivate} pending />
       )}
       <div className="rail-actions">
         <button className="add" type="button" onClick={props.onAdd}>{t("rail.add")}</button>
         <button className={"ghost" + (editing ? " on" : "")} type="button" aria-pressed={editing} onClick={() => setEditing((v) => !v)}>{editing ? t("rail.done") : t("rail.edit")}</button>
-        <button className="ghost" type="button" onClick={props.onShots}>{t("rail.shots")}</button>
-        <button className="ghost" type="button" onClick={props.onArchived}>{t("rail.archived")}</button>
-        <button className="ghost" type="button" onClick={props.onSettings}>{t("rail.settings")}</button>
       </div>
     </aside>
   );

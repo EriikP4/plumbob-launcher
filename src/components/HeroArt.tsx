@@ -33,7 +33,7 @@ const ORBS = Array.from({ length: 5 }, (_, i) => ({
 
 const FACE_SHADES = [0.6, 0.22, 0.4, 0.14];
 
-export default function HeroArt({ colors, dense }: { colors: [string, string]; dense?: boolean }) {
+export default function HeroArt({ colors, dense, cover }: { colors: [string, string]; dense?: boolean; cover?: string }) {
   const list = dense ? BOOT_DIAMONDS : DIAMONDS;
   return (
     <div className="hero-art" aria-hidden="true" style={{ background: `linear-gradient(135deg, ${colors[0]}, ${colors[1]})` }}>
@@ -65,6 +65,7 @@ export default function HeroArt({ colors, dense }: { colors: [string, string]; d
           </span>
         </span>
       ))}
+      {cover && <img className="hero-cover" src={cover} alt="" decoding="async" />}
     </div>
   );
 }
