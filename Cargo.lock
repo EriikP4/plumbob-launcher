@@ -3034,7 +3034,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "s4im"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "notify",
@@ -3049,7 +3049,7 @@ dependencies = [
 
 [[package]]
 name = "s4im-engine"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "dirs 6.0.0",

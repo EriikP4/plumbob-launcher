@@ -193,11 +193,35 @@ fn apply_tray_default(cfg: &Config, summary: InstanceSummary) -> Result<Instance
 }
 
 #[tauri::command]
-async fn register_main(name: String, description: String, code: String) -> Result<InstanceSummary, String> {
+async fn tray_old_info(code: String) -> Result<Option<s4im_engine::TrayOldInfo>, String> {
     blocking(move || {
         let cfg = config()?;
-        let summary = s4im_engine::register_main(&cfg.game_root, &cfg.snapshots_root, &name, &description, &code)
+        s4im_engine::tray_old_info(&cfg.game_root, &code).map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn delete_tray_old(code: String) -> Result<(), String> {
+    blocking(move || {
+        let cfg = config()?;
+        s4im_engine::delete_tray_old(&cfg.game_root, &code).map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn register_main(name: String, description: String, code: String, kind: Option<InstanceKind>, role: Option<Role>) -> Result<InstanceSummary, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let mut summary = s4im_engine::register_main(&cfg.game_root, &cfg.snapshots_root, &name, &description, &code)
             .map_err(text)?;
+        if kind == Some(InstanceKind::Mp) {
+            summary = s4im_engine::convert_instance(&cfg.game_root, &summary.id, InstanceKind::Mp, false).map_err(text)?;
+            if role.is_some() {
+                summary = s4im_engine::set_instance_role(&cfg.game_root, &summary.id, role).map_err(text)?;
+            }
+        }
         apply_tray_default(&cfg, summary)
     })
     .await
@@ -770,39 +794,102 @@ struct BustItem {
     path: String,
 }
 
+const BUST_PACKAGE: &str = "localthumbcache.package";
+const BUST_CACHES_KEPT: usize = 5;
+
+fn bust_package(cfg: &Config, code: Option<String>) -> Result<PathBuf, String> {
+    if let Some(code) = code {
+        if !s4im_engine::valid_code(&code) {
+            return Err("err.codeInvalid".into());
+        }
+        return Ok(s4im_engine::instance_dir(&cfg.game_root, &code).join(BUST_PACKAGE));
+    }
+    let direct = cfg.game_dir.join(BUST_PACKAGE);
+    if direct.is_file() {
+        return Ok(direct);
+    }
+    if let Some(code) = s4im_engine::active_instance_id(&cfg.game_root) {
+        return Ok(s4im_engine::instance_dir(&cfg.game_root, &code).join(BUST_PACKAGE));
+    }
+    s4im_engine::detect_game_folders(&cfg.game_root)
+        .into_iter()
+        .map(|name| cfg.game_root.join(name).join(BUST_PACKAGE))
+        .find(|p| p.is_file())
+        .ok_or_else(|| "err.notRegistered".to_string())
+}
+
+fn cached_busts(dir: &std::path::Path) -> Option<Vec<BustItem>> {
+    let list = std::fs::read_to_string(dir.join("list.txt")).ok()?;
+    let items: Vec<BustItem> = list
+        .lines()
+        .filter(|id| !id.is_empty())
+        .map(|id| (id, dir.join(format!("{id}.png"))))
+        .filter(|(_, path)| path.is_file())
+        .map(|(id, path)| BustItem { id: id.to_string(), path: path.display().to_string() })
+        .collect();
+    (!items.is_empty()).then_some(items)
+}
+
+fn prune_bust_caches(root: &std::path::Path, keep: &std::path::Path) {
+    let mut dirs: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let _ = std::fs::remove_file(&path);
+        } else if path != keep {
+            let stamp = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+            dirs.push((stamp, path));
+        }
+    }
+    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in dirs.into_iter().skip(BUST_CACHES_KEPT - 1) {
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
 #[tauri::command]
 async fn list_busts(app: AppHandle, code: Option<String>) -> Result<Vec<BustItem>, String> {
     blocking(move || {
         let cfg = config()?;
-        let code = code
-            .or_else(|| s4im_engine::active_instance_id(&cfg.game_root))
-            .ok_or_else(|| "err.notRegistered".to_string())?;
-        if !s4im_engine::valid_code(&code) {
-            return Err("err.codeInvalid".into());
-        }
-        let package = s4im_engine::instance_dir(&cfg.game_root, &code).join("localthumbcache.package");
-        if !package.is_file() {
+        let package = bust_package(&cfg, code)?;
+        let Ok(meta) = std::fs::metadata(&package) else { return Ok(Vec::new()) };
+        if !meta.is_file() {
             return Ok(Vec::new());
         }
+        let stamp = format!("{}|{}|{:?}", package.display(), meta.len(), meta.modified().ok());
+        let key = blake3::hash(stamp.as_bytes()).to_hex().to_string();
+        let root = icons_dir()?.join("busts");
+        let dir = root.join(&key[..16]);
+        allow_icons(&app);
+        if let Some(items) = cached_busts(&dir) {
+            return Ok(items);
+        }
         let found = s4im_engine::read_thumbnails(&package, &s4im_engine::BUST_TYPES).map_err(text)?;
-        let dir = icons_dir()?.join("busts");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        allow_icons(&app);
         let mut seen = std::collections::HashSet::new();
+        let unique: Vec<(String, s4im_engine::Thumbnail)> = found
+            .into_iter()
+            .filter_map(|item| {
+                let hash = blake3::hash(&item.data).to_hex().to_string();
+                seen.insert(hash.clone()).then(|| (hash[..16].to_string(), item))
+            })
+            .collect();
+        let total = unique.len();
         let mut out = Vec::new();
-        for item in found {
-            let hash = blake3::hash(&item.data).to_hex().to_string();
-            if !seen.insert(hash.clone()) {
-                continue;
-            }
-            let id = hash[..16].to_string();
+        for (done, (id, item)) in unique.into_iter().enumerate() {
+            let _ = app.emit("busts-progress", ShotsProgress { done, total });
             let target = dir.join(format!("{id}.png"));
             let Ok(png) = s4im_engine::thumbnail_to_png(&item.data) else { continue };
             if std::fs::write(&target, &png).is_ok() {
                 out.push(BustItem { id, path: target.display().to_string() });
             }
         }
+        let _ = app.emit("busts-progress", ShotsProgress { done: total, total });
+        let list: Vec<&str> = out.iter().map(|b| b.id.as_str()).collect();
+        let _ = std::fs::write(dir.join("list.txt"), list.join("
+"));
+        prune_bust_caches(&root, &dir);
         Ok(out)
     })
     .await
@@ -1047,8 +1134,12 @@ fn open_s4mm_blocking(code: Option<String>) -> Result<(), String> {
         return Err(text(EngineError::Invalid("s4mm".into())));
     }
     if let Some(code) = code {
-        s4im_engine::activate_instance(&cfg.game_root, &cfg.snapshots_root, &code, true)
-            .map_err(text)?;
+        let running = s4im_engine::game_running();
+        let active = s4im_engine::active_instance_id(&cfg.game_root);
+        if !(running && active.as_deref() == Some(code.as_str())) {
+            s4im_engine::activate_instance(&cfg.game_root, &cfg.snapshots_root, &code, true)
+                .map_err(text)?;
+        }
     }
     s4im_engine::launch_s4mm(&settings).map_err(text)
 }
@@ -1211,6 +1302,8 @@ fn main() {
             enable_tray_sync,
             disable_tray_sync,
             register_main,
+            tray_old_info,
+            delete_tray_old,
             import_instance,
             create_instance,
             adopt_instance,

@@ -48,7 +48,6 @@ function Group({ title, items, editing, activeId, selectedId, locked, onSelect, 
           <button key={d.id} type="button" role="option" aria-selected={d.id === selectedId}
             className={"item" + (pending ? " pending" : "") + (d.id === dragId ? " dragging" : "") + (d.id === overId && dragId !== d.id ? " over" : "")}
             draggable={editing && !locked}
-            disabled={locked && d.id !== selectedId}
             onClick={() => onSelect(d)}
             onDoubleClick={() => { if (!editing && !locked && !d.legacy) onActivate(d); }}
             onKeyDown={(e) => step(e, i)}

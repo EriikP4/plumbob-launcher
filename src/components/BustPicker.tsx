@@ -11,14 +11,21 @@ export default function BustPicker({ onClose, onPick }: { onClose: () => void; o
   const [code, setCode] = useState<string | null>(null);
   const [busts, setBusts] = useState<Bust[] | null>(null);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
 
   useEffect(() => {
     backend.listInstances().then((l) => setInstances(l.filter((i) => !i.legacy))).catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    const off = backend.onBustsProgress((p) => setProgress(p));
+    return () => void off.then((f) => f());
+  }, []);
+
+  useEffect(() => {
     let live = true;
     setBusts(null);
+    setProgress({ done: 0, total: 0 });
     setError("");
     backend.listBusts(code).then((l) => live && setBusts(l)).catch((e) => {
       if (!live) return;
@@ -33,15 +40,21 @@ export default function BustPicker({ onClose, onPick }: { onClose: () => void; o
       <div className="dialog wide" role="dialog" aria-modal="true">
         <div className="dialog-body">
           <h2>{t("bust.title")}</h2>
-          <p>{t("bust.hint")}</p>
-          <label className="field">
-            <span>{t("bust.from")}</span>
-            <select value={code ?? ""} onChange={(e) => setCode(e.target.value || null)}>
-              <option value="">{t("bust.active")}</option>
-              {instances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
-          </label>
-          {busts === null && <p>{t("common.working")}</p>}
+          {instances.length > 0 && (
+            <label className="field">
+              <span>{t("bust.from")}</span>
+              <select value={code ?? ""} onChange={(e) => setCode(e.target.value || null)}>
+                <option value="">{t("bust.active")}</option>
+                {instances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+            </label>
+          )}
+          {busts === null && (
+            <div className="bust-loading">
+              <div className="progress"><i style={{ width: `${progress.total > 0 ? Math.max(4, Math.round((progress.done / progress.total) * 100)) : 4}%` }} /></div>
+              <small className="status">{progress.total > 0 ? t("bust.loading", { done: progress.done, total: progress.total }) : t("bust.reading")}</small>
+            </div>
+          )}
           {busts && busts.length === 0 && <p>{error || t("bust.empty")}</p>}
           {busts && busts.length > 0 && (
             <div className="bust-grid">

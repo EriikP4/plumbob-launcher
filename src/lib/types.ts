@@ -154,6 +154,12 @@ export interface Tool {
   customIcon: boolean;
 }
 
+export interface TrayOldInfo {
+  path: string;
+  files: number;
+  bytes: number;
+}
+
 export interface Bust {
   id: string;
   path: string;

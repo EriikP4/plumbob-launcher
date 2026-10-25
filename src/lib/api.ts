@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
-  ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
+  ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, TrayOldInfo, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
   Bust, EffectSupport, PresenceState, ProfileInfo, ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
 } from "./types";
 import { INSTANCES, SAVES, SNAPSHOTS } from "./sample";
@@ -64,7 +64,10 @@ export interface Backend {
   enableTraySync(code: string): Promise<void>;
   disableTraySync(code: string, mode: TrayDisable): Promise<void>;
   onShotsProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
-  registerMain(input: Omit<InstanceInput, "kind">): Promise<void>;
+  registerMain(input: Omit<InstanceInput, "kind"> & { kind?: InstanceKind }): Promise<void>;
+  trayOldInfo(code: string): Promise<TrayOldInfo | null>;
+  deleteTrayOld(code: string): Promise<void>;
+  onBustsProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
   createInstance(input: InstanceInput): Promise<void>;
   adoptInstance(input: InstanceInput): Promise<void>;
   importInstance(input: ImportInput): Promise<void>;
@@ -333,6 +336,9 @@ export const sampleBackend: Backend = {
     return () => void sampleProgress.delete(cb);
   },
   registerMain: unavailable,
+  trayOldInfo: async () => ({ path: "C:\Users\You\Documents\Electronic Arts\The Sims 4_solo\TrayOld", files: 120, bytes: 85 * 1024 ** 2 }),
+  deleteTrayOld: async () => undefined,
+  onBustsProgress: async () => () => undefined,
   createInstance: unavailable,
   adoptInstance: unavailable,
   importInstance: unavailable,
@@ -422,6 +428,9 @@ export const tauriBackend: Backend = {
   disableTraySync: async (code, mode) => void (await call("disable_tray_sync", { code, mode })),
   onShotsProgress: (cb) => listen<ShotsProgress>("shots-progress", (e) => cb(e.payload)),
   registerMain: async (i) => void (await call("register_main", i)),
+  trayOldInfo: (code) => call<TrayOldInfo | null>("tray_old_info", { code }),
+  deleteTrayOld: async (code) => void (await call("delete_tray_old", { code })),
+  onBustsProgress: (cb) => listen<ShotsProgress>("busts-progress", (e) => cb(e.payload)),
   createInstance: async (i) => void (await call("create_instance", { ...i })),
   adoptInstance: async (i) => void (await call("adopt_instance", { ...i })),
   importInstance: async (i) => void (await call("import_instance", { ...i })),

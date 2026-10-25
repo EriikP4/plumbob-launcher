@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { backend } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import { pickFolder } from "../lib/native";
-import type { Diagnostics, GameOptions, ImportMode, Instance } from "../lib/types";
+import type { Diagnostics, GameOptions, ImportMode, Instance, InstanceKind, Role } from "../lib/types";
 import { DiagWarnings } from "./DiagPanel";
 import InstanceForm from "./InstanceForm";
 import GameOptionsFields, { RECOMMENDED } from "./GameOptionsFields";
@@ -16,13 +16,13 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose?: () 
 }
 
 export function SetupDialog({ onDone }: { onDone: () => void }) {
-  const { t } = useSettings();
+  const { t, settings } = useSettings();
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   useEffect(() => {
     backend.diagnose().then(setDiag).catch(() => undefined);
   }, []);
-  const register = async (name: string, description: string, code: string) => {
-    await backend.registerMain({ name, description, code });
+  const register = async (name: string, description: string, code: string, kind?: InstanceKind, role?: Role | null) => {
+    await backend.registerMain({ name, description, code, kind, role });
     onDone();
   };
   return (
@@ -30,8 +30,15 @@ export function SetupDialog({ onDone }: { onDone: () => void }) {
       <InstanceForm
         title={t("setup.title")}
         submitLabel={t("setup.save")}
-        extra={<DiagWarnings diag={diag} />}
-        onSubmit={(v) => register(v.name, v.description, v.code)}
+        withKind
+        extra={
+          <>
+            <DiagWarnings diag={diag} />
+            <p>{t("setup.explain")}</p>
+            {settings.multiplayer.enabled && <p>{t("setup.kindAsk")}</p>}
+          </>
+        }
+        onSubmit={(v) => register(v.name, v.description, v.code, v.kind, v.role)}
         onSecondary={{ label: t("setup.skip"), run: () => register(t("setup.mainName"), "", t("setup.mainCode")) }}
       />
     </Modal>

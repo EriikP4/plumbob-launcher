@@ -140,6 +140,7 @@ export default function App() {
   const cur = instances.find((i) => i.id === curId) ?? null;
   const curKind = cur?.kind;
   const multiplayerOn = settings.multiplayer.enabled;
+  const readOnly = playing && !!cur && !!status && cur.id !== status.activeId;
 
   useEffect(() => {
     setMode(curKind === "mp" && multiplayerOn ? "s4mp" : "offline");
@@ -302,14 +303,14 @@ export default function App() {
     }
   };
   const multiplayer = settings.multiplayer.enabled;
-  const tag = [multiplayer ? (cur.kind === "solo" ? t("kind.solo") : t("kind.mp")) : "", cur.kind === "mp" && cur.role ? t(`role.${cur.role}`) : "", status.activeId === cur.id ? t("main.active") : ""].filter(Boolean).join(" · ");
+  const tag = [multiplayer ? (cur.kind === "solo" ? t("kind.solo") : t("kind.mp")) : "", cur.kind === "mp" && cur.role ? t(`role.${cur.role}`) : "", status.activeId === cur.id ? t("main.active") : "", readOnly ? t("readonly.tag") : ""].filter(Boolean).join(" · ");
 
   return shell(
     <div className="app">
       <Rail instances={instances} activeId={status.activeId} selectedId={view === "home" ? "" : cur.id} locked={playing} onSelect={select} onAdd={openAdd} onReorder={reorder} onActivate={askActivate} />
       <div className="content">
         {view === "home" ? (
-          <HomeView instances={instances} latest={latest} onOpen={select} onPlay={(i) => { select(i); setAutoPlay(i.id); }} />
+          <HomeView onChanged={() => void reload()} instances={instances} latest={latest} onOpen={select} onPlay={(i) => { select(i); setAutoPlay(i.id); }} />
         ) : (
         <main className="scroll" key={cur.id}>
           <section className="hero">
@@ -317,9 +318,9 @@ export default function App() {
             <div className="shade" />
             <div className="hero-actions">
               <button className={"icon-btn tip below right" + (refreshing ? " refreshing" : "")} type="button" data-tip={t("main.refresh")} aria-label={t("main.refresh")} disabled={cur.legacy || refreshing} onClick={refresh}><Icon name="refresh" size={18} /></button>
-              {multiplayerOn && cur.kind === "mp" && <button className="icon-btn tip below right" type="button" data-tip={t("main.hash")} aria-label={t("main.hash")} disabled={cur.legacy} onClick={() => setHashing(true)}><Icon name="shield" size={18} /></button>}
-              <button className="icon-btn tip below right" type="button" data-tip={t("main.notes")} aria-label={t("main.notes")} disabled={cur.legacy} onClick={() => setNotes(true)}><Icon name="notes" size={18} /></button>
-              <button className="icon-btn tip below right" type="button" data-tip={t("main.music")} aria-label={t("main.music")} disabled={cur.legacy} onClick={() => setMusic(true)}><Icon name="note" size={18} /></button>
+              {multiplayerOn && cur.kind === "mp" && <button className="icon-btn tip below right" type="button" data-tip={t("main.hash")} aria-label={t("main.hash")} disabled={cur.legacy || readOnly} onClick={() => setHashing(true)}><Icon name="shield" size={18} /></button>}
+              <button className="icon-btn tip below right" type="button" data-tip={t("main.notes")} aria-label={t("main.notes")} disabled={cur.legacy || readOnly} onClick={() => setNotes(true)}><Icon name="notes" size={18} /></button>
+              <button className="icon-btn tip below right" type="button" data-tip={t("main.music")} aria-label={t("main.music")} disabled={cur.legacy || readOnly} onClick={() => setMusic(true)}><Icon name="note" size={18} /></button>
               <button className="icon-btn tip below right" type="button" data-tip={t("main.edit")} aria-label={t("main.edit")} disabled={cur.legacy || playing} onClick={() => setEditing(true)}><Icon name="edit" size={18} /></button>
             </div>
             <div className="in">
@@ -332,7 +333,7 @@ export default function App() {
           {outdated && (
             <div className="banner warn" role="alert">
               <span>{t("update.warn", { old: cur.gameVersion ?? "", new: latest ?? "" })}</span>
-              <button type="button" className="ghost" disabled={cur.legacy} onClick={snapshotNow}>{t("update.snapshot")}</button>
+              <button type="button" className="ghost" disabled={cur.legacy || readOnly} onClick={snapshotNow}>{t("update.snapshot")}</button>
             </div>
           )}
 
@@ -355,7 +356,7 @@ export default function App() {
           <div className={"cols" + (refreshing ? " loading" : "")}>
             <InfoCard instance={cur} snaps={snaps} saves={saves} locked={playing} onSnapshot={snapshotNow} onRestore={setRestoring} onChanged={() => setTick((n) => n + 1)} latestVersion={latest} actions={
               <>
-                {settings.s4mm.enabled && <S4mmButton code={cur.id} legacy={cur.legacy} disabled={playing} onError={fail} />}
+                {settings.s4mm.enabled && <S4mmButton code={cur.id} legacy={cur.legacy} disabled={readOnly} onError={fail} />}
                 <button className="ghost" type="button" onClick={(e) => { burstAt(e.currentTarget); backend.openFolder(cur.id, "root").catch(fail); }}><Icon name="folder" size={14} /> {t("card.openFolder")}</button>
               </>
             } />
@@ -391,6 +392,13 @@ export default function App() {
               <span className="mono">{t("legacy.bar")}</span>
             </div>
             <button className="play" type="button" onClick={() => { setPreset(cur); setAdding(true); }}>{t("legacy.barBtn")}</button>
+          </div>
+        ) : readOnly ? (
+          <div className="bar legacy-bar">
+            <div className="status">
+              <b>{cur.name}</b>
+              <span className="mono">{t("readonly.bar")}</span>
+            </div>
           </div>
         ) : (
           <PlayBar instance={cur} playing={playing} waiting={playing && !started} onCancel={() => { cancelled.current = true; void backend.cancelWatch(); }} mode={mode} onMode={setMode} onToggle={toggle} warn={mismatch} />

@@ -591,7 +591,8 @@ html.unfocused *, html.unfocused *::before, html.unfocused *::after { animation-
 .player-seek { display: flex; align-items: center; gap: 10px; width: 100%; }
 .player-seek .mono { font-size: 11px; color: var(--muted); min-width: 34px; text-align: center; }
 .player-volume { display: flex; align-items: center; gap: 8px; justify-content: flex-end; color: var(--muted); }
-.player-volume .range { width: 100px; }
+.player-volume .range { width: 64px; flex: 0 0 auto; height: 3px; }
+.player-volume .range::-webkit-slider-thumb { width: 9px; height: 9px; box-shadow: 0 0 5px rgba(var(--glow), .8); }
 .range { -webkit-appearance: none; appearance: none; flex: 1; height: 5px; border-radius: 99px; outline: none; cursor: pointer; background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--line) var(--fill, 0%)); }
 .range:disabled { opacity: .4; cursor: default; }
 .range::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px rgba(var(--glow), .9); transition: transform .12s; }
@@ -872,3 +873,4 @@ html.no-anim .settings-page, html.no-anim .settings-nav { animation: none; }
 .edit-head { overflow: visible; }
 .activate-head { display: flex; align-items: center; gap: 12px; }
 .activate-head h2 { font-size: 18px; }
+.bust-loading { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }

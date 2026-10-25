@@ -77,6 +77,30 @@ fn old_path(dir: &Path) -> Option<PathBuf> {
     find_child(dir, TRAY_OLD).filter(|p| p.is_dir() && !is_link(p))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayOldInfo {
+    pub path: PathBuf,
+    pub files: u64,
+    pub bytes: u64,
+}
+
+pub fn tray_old_info(game_root: &Path, code: &str) -> Result<Option<TrayOldInfo>> {
+    let (dir, _) = registered(game_root, code)?;
+    Ok(old_path(&dir).map(|path| {
+        let (files, bytes) = crate::fsutil::dir_stats(&path);
+        TrayOldInfo { path, files, bytes }
+    }))
+}
+
+pub fn delete_tray_old(game_root: &Path, code: &str) -> Result<()> {
+    let (dir, _) = registered(game_root, code)?;
+    if let Some(old) = old_path(&dir) {
+        fs::remove_dir_all(old)?;
+    }
+    Ok(())
+}
+
 pub fn is_synced(game_root: &Path, dir: &Path) -> bool {
     let tray = tray_path(dir);
     if !is_link(&tray) {

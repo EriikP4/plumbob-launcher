@@ -4,11 +4,25 @@ import { compareVersions } from "../lib/format";
 import type { Instance } from "../lib/types";
 import Icon from "./Icon";
 import InstanceThumb from "./InstanceThumb";
+import TrayOldDialog from "./TrayOldDialog";
+
+const IGNORED_KEY = "tray.old.ignored";
+
+const readIgnored = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(IGNORED_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+};
 
 const GREETINGS = 10;
 
-export default function HomeView({ instances, latest, onOpen, onPlay }: { instances: Instance[]; latest: string | null; onOpen: (i: Instance) => void; onPlay: (i: Instance) => void }) {
+export default function HomeView({ instances, latest, onOpen, onPlay, onChanged }: { instances: Instance[]; latest: string | null; onOpen: (i: Instance) => void; onPlay: (i: Instance) => void; onChanged: () => void }) {
   const { t, when, duration } = useSettings();
+  const [ignored, setIgnored] = useState(readIgnored);
+  const [trayFor, setTrayFor] = useState<Instance | null>(null);
   const [greeting] = useState(() => Math.floor(Math.random() * GREETINGS));
   const ready = instances.filter((i) => !i.legacy);
   const played = ready.filter((i) => i.playSeconds > 0);
@@ -16,10 +30,19 @@ export default function HomeView({ instances, latest, onOpen, onPlay }: { instan
   const total = ready.reduce((n, i) => n + i.playSeconds, 0);
   const outdated = latest ? ready.filter((i) => i.gameVersion && compareVersions(i.gameVersion, latest) < 0) : [];
   const pending = instances.filter((i) => i.legacy);
-  const old = ready.filter((i) => i.trayOld);
+  const old = ready.filter((i) => i.trayOld && !ignored.includes(i.id));
+  const ignore = (id: string) => {
+    const next = [...ignored, id];
+    setIgnored(next);
+    try {
+      localStorage.setItem(IGNORED_KEY, JSON.stringify(next));
+    } catch {
+      return;
+    }
+  };
   const notices = [
     ...outdated.map((i) => ({ key: "v" + i.id, text: t("home.noticeVersion", { name: i.name, old: i.gameVersion ?? "", new: latest ?? "" }), go: i })),
-    ...old.map((i) => ({ key: "t" + i.id, text: t("home.noticeTray", { name: i.name }), go: i })),
+    ...old.map((i) => ({ key: "t" + i.id, text: t("home.noticeTray", { name: i.name }), go: i, tray: true })),
     ...pending.map((i) => ({ key: "p" + i.id, text: t("home.noticePending", { name: i.name }), go: i })),
   ];
 
@@ -66,12 +89,20 @@ export default function HomeView({ instances, latest, onOpen, onPlay }: { instan
             {notices.map((n) => (
               <div className="row" key={n.key}>
                 <span>{n.text}</span>
-                <button type="button" className="ghost small" onClick={() => onOpen(n.go)}>{t("home.open")}</button>
+                <button type="button" className="ghost small" onClick={() => ("tray" in n ? setTrayFor(n.go) : onOpen(n.go))}>{t("home.open")}</button>
               </div>
             ))}
           </div>
         </section>
       </div>
+      {trayFor && (
+        <TrayOldDialog
+          instance={trayFor}
+          onClose={() => setTrayFor(null)}
+          onIgnore={() => { ignore(trayFor.id); setTrayFor(null); }}
+          onDeleted={() => { setTrayFor(null); onChanged(); }}
+        />
+      )}
     </main>
   );
 }

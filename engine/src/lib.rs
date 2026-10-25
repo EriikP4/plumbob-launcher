@@ -86,6 +86,6 @@ pub use snapshot::{
 };
 #[cfg(windows)]
 pub use tray::{
-    disable_tray_sync, enable_tray_sync, is_synced as tray_is_synced, link_new_instance_tray,
+    delete_tray_old, disable_tray_sync, enable_tray_sync, tray_old_info, TrayOldInfo, is_synced as tray_is_synced, link_new_instance_tray,
     shared_tray_dir, MergeReport, TrayDisable, SHARED_TRAY,
 };

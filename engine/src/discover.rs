@@ -95,7 +95,7 @@ fn summarize(dir: &Path, id: &str, meta: Option<InstanceMeta>, legacy: bool) -> 
         save_count: saves,
         tray_count: tray_items,
         tray_synced,
-        tray_old: find_child(dir, "TrayOld").is_some_and(|p| p.is_dir() && !is_link(&p)),
+        tray_old: find_child(dir, "TrayOld").is_some_and(|p| p.is_dir() && !is_link(&p) && crate::fsutil::dir_stats(&p).0 > 0),
         size_bytes: size,
         last_modified: newest,
         last_played,
