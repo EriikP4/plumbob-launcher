@@ -53,12 +53,14 @@ impl Default for PresenceSettings {
 pub struct ProfileSettings {
     pub source: String,
     pub custom: Option<PathBuf>,
+    pub sim: Option<PathBuf>,
+    pub sim_id: Option<String>,
     pub name: Option<String>,
 }
 
 impl Default for ProfileSettings {
     fn default() -> Self {
-        ProfileSettings { source: "windows".into(), custom: None, name: None }
+        ProfileSettings { source: "windows".into(), custom: None, sim: None, sim_id: None, name: None }
     }
 }
 
@@ -124,12 +126,23 @@ pub struct Settings {
     pub presence: PresenceSettings,
     pub profile: ProfileSettings,
     pub instance_icons: BTreeMap<String, PathBuf>,
+    pub lan_hosts: BTreeMap<String, String>,
+    pub instance_colors: BTreeMap<String, String>,
+    pub instance_banners: BTreeMap<String, String>,
+    pub ignored_update: Option<String>,
+    pub update_sound: bool,
+    pub ui_scale: u32,
+    pub game_args: Vec<String>,
+    pub ui_auto: bool,
     pub tools: Vec<ToolEntry>,
     pub tray_sync_default: bool,
     pub auto_snapshots: bool,
     pub hide_update_notice: bool,
     pub music_welcome_seen: bool,
     pub game_folder: Option<String>,
+    pub announcements_enabled: bool,
+    pub read_announcements: Vec<String>,
+    pub toasted_announcements: Vec<String>,
 }
 
 impl Default for Settings {
@@ -151,12 +164,23 @@ impl Default for Settings {
             presence: PresenceSettings::default(),
             profile: ProfileSettings::default(),
             instance_icons: BTreeMap::new(),
+            lan_hosts: BTreeMap::new(),
+            instance_colors: BTreeMap::new(),
+            instance_banners: BTreeMap::new(),
+            ignored_update: None,
+            update_sound: true,
+            ui_scale: 100,
+            game_args: Vec::new(),
+            ui_auto: true,
             tools: Vec::new(),
             tray_sync_default: false,
             auto_snapshots: true,
             hide_update_notice: false,
             music_welcome_seen: false,
             game_folder: None,
+            announcements_enabled: true,
+            read_announcements: Vec::new(),
+            toasted_announcements: Vec::new(),
         }
     }
 }

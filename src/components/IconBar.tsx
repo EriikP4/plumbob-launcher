@@ -6,7 +6,7 @@ import ToolsPopover from "./ToolsPopover";
 
 type Target = "home" | "shots" | "archived" | "settings";
 
-export default function IconBar({ view, onNav }: { view: string; onNav: (target: Target) => void }) {
+export default function IconBar({ view, onNav, updateReady, checking, onUpdate, news }: { view: string; onNav: (target: Target) => void; updateReady: boolean; checking: boolean; onUpdate: () => void; news: { unread: number; onOpen: () => void } | null }) {
   const { t } = useSettings();
   const [tools, setTools] = useState(false);
   const toolsBtn = useRef<HTMLButtonElement>(null);
@@ -30,6 +30,16 @@ export default function IconBar({ view, onNav }: { view: string; onNav: (target:
         </button>
       </div>
       <div className="bar-group bottom">
+        {news && (
+          <button type="button" className="bar-btn tip side" data-tip={news.unread > 0 ? t("news.unread", { n: news.unread }) : t("news.title")} aria-label={t("news.aria")} onClick={() => { setTools(false); news.onOpen(); }}>
+            <Icon name="news" size={20} />
+            {news.unread > 0 && <i className={"news-dot" + (news.unread > 1 ? " count" : "")} aria-hidden="true">{news.unread > 1 ? Math.min(news.unread, 9) : ""}</i>}
+          </button>
+        )}
+        <button type="button" className={"bar-btn tip side" + (checking ? " busy" : "")} data-tip={updateReady ? t("appupd.available") : t("appupd.check")} aria-label={updateReady ? t("appupd.available") : t("appupd.check")} disabled={checking} onClick={() => { setTools(false); onUpdate(); }}>
+          <Icon name={checking ? "spinner" : "download"} size={20} className={checking ? "spin" : undefined} />
+          {updateReady && <i className="update-dot" aria-hidden="true" />}
+        </button>
         {item("settings", "gear", t("rail.settings"))}
       </div>
       {tools && <ToolsPopover anchor={toolsBtn.current} onClose={() => setTools(false)} />}

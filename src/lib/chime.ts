@@ -110,3 +110,37 @@ export function playAlarm(level: 1 | 2): () => void {
     setTimeout(() => void ctx.close().catch(() => undefined), 250);
   };
 }
+
+export function playBell(): () => void {
+  let ctx: AudioContext;
+  try {
+    ctx = new AudioContext();
+  } catch {
+    return () => undefined;
+  }
+  void ctx.resume().catch(() => undefined);
+  const master = ctx.createGain();
+  master.gain.value = 0.14;
+  master.connect(ctx.destination);
+  const now = ctx.currentTime + 0.03;
+  [[0, 1568], [0.16, 2093]].forEach(([delay, freq]) => {
+    for (const [mult, level, decay] of [[1, 0.6, 1.4], [2.76, 0.22, 0.9], [5.4, 0.1, 0.5]] as const) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * mult;
+      const start = now + delay;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(level, start + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+      osc.connect(gain).connect(master);
+      osc.start(start);
+      osc.stop(start + decay + 0.05);
+    }
+  });
+  return () => {
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.setTargetAtTime(0, ctx.currentTime, 0.04);
+    setTimeout(() => void ctx.close().catch(() => undefined), 250);
+  };
+}

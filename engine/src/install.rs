@@ -19,10 +19,22 @@ pub struct RootCheck {
     pub version: Option<String>,
 }
 
+const BIN_DIRS: [&str; 2] = ["Bin", "Bin_LE"];
+
 fn bin_dir(root: &Path) -> Option<PathBuf> {
     let game = find_child(root, "Game")?;
-    let bin = find_child(&game, "Bin")?;
-    (find_child(&bin, "TS4_x64.exe").is_some() || find_child(&bin, "Default.ini").is_some()).then_some(bin)
+    BIN_DIRS.iter().find_map(|name| {
+        let bin = find_child(&game, name)?;
+        (find_child(&bin, "TS4_x64.exe").is_some() || find_child(&bin, "Default.ini").is_some()).then_some(bin)
+    })
+}
+
+pub fn game_exe(root: &Path) -> Option<PathBuf> {
+    find_child(&bin_dir(root)?, "TS4_x64.exe")
+}
+
+pub fn resolve_game_root(path: &Path) -> Option<PathBuf> {
+    check_game_root(path).root
 }
 
 pub fn read_install_version(root: &Path) -> Option<String> {

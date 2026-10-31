@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "welcome-0-3-0",
+      "date": "2026-11-01",
+      "type": "info",
+      "title": { "es": "Bienvenido a Plumbob Launcher 0.3.0", "en": "Welcome to Plumbob Launcher 0.3.0" },
+      "body": {
+        "es": "Aquí aparecerán las novedades y avisos del desarrollador.\n- Crea varias estancias con sus propios mods\n- Sincroniza por red local\n- Personaliza cada estancia",
+        "en": "Developer news and notices will show up here.\n- Create several instances with their own mods\n- Sync over your local network\n- Customize each instance"
+      }
+    }
+  ]
+}

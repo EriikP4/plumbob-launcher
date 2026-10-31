@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backend } from "./lib/api";
 import { useSettings } from "./lib/settings";
-import type { HealthWarning, Instance, LaunchMode, SaveInfo, Snapshot, Status } from "./lib/types";
+import type { Announcement, HealthWarning, Instance, LaunchMode, SaveInfo, Snapshot, Status, UpdateInfo } from "./lib/types";
 import Rail from "./components/Rail";
 import HeroArt from "./components/HeroArt";
 import PlayBar from "./components/PlayBar";
@@ -10,6 +10,12 @@ import ShotsView from "./components/ShotsView";
 import { EditDialog, RestoreDialog } from "./components/InstanceDialogs";
 import { compareVersions, newestVersion } from "./lib/format";
 import { assetUrl } from "./lib/assets";
+import { appVersion } from "./lib/native";
+import { shouldNotify } from "./lib/updates";
+import { playBell } from "./lib/chime";
+import AppUpdateDialog from "./components/AppUpdateDialog";
+import AnnouncementsDialog from "./components/AnnouncementsDialog";
+import { bannerFor, colorsFor } from "./lib/appearance";
 import HomeView from "./components/HomeView";
 import ActivateDialog from "./components/ActivateDialog";
 import IconBar from "./components/IconBar";
@@ -48,6 +54,15 @@ export default function App() {
   const [music, setMusic] = useState(false);
   const [hashing, setHashing] = useState(false);
   const [updateNotice, setUpdateNotice] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<UpdateInfo | null>(null);
+  const [appUpdateOpen, setAppUpdateOpen] = useState(false);
+  const [ignoredAsk, setIgnoredAsk] = useState<UpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [newsOpen, setNewsOpen] = useState(false);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const [scale, setScale] = useState(100);
   const [gameVer, setGameVer] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<Snapshot | null>(null);
   const [notice, setNotice] = useState("");
@@ -55,6 +70,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
   const [modWarnings, setModWarnings] = useState<HealthWarning[] | null>(null);
+  const [issuesView, setIssuesView] = useState<HealthWarning[] | null>(null);
   const checking = useRef(false);
   const [songs, setSongs] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,6 +83,69 @@ export default function App() {
   const toggleRef = useRef<(() => void) | null>(null);
   const [activating, setActivating] = useState<Instance | null>(null);
   const [shotTotals, setShotTotals] = useState({ count: 0, bytes: 0 });
+
+  useEffect(() => {
+    if (!settings.setupDone) return;
+    let live = true;
+    backend
+      .checkUpdate(false, settingsRef.current.language)
+      .then(async (found) => {
+        if (!live || !found) return;
+        setAppUpdate(found);
+        const current = settingsRef.current;
+        if (!shouldNotify(found.version, current.ignoredUpdate)) return;
+        let heard: string | null = null;
+        try {
+          heard = localStorage.getItem("update.bell");
+        } catch {
+          heard = null;
+        }
+        if (heard === found.version || !current.updateSound) return;
+        const running = await backend.status().then((s) => s.gameRunning).catch(() => false);
+        if (running) return;
+        try {
+          localStorage.setItem("update.bell", found.version);
+        } catch {
+          return;
+        }
+        playBell();
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [settings.setupDone]);
+
+  useEffect(() => {
+    backend.setUiScale(settings.uiAuto ? null : settings.uiScale).then(setScale).catch(() => undefined);
+  }, [settings.uiAuto, settings.uiScale]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey) return;
+      const key = e.key;
+      let next: number | null = null;
+      if (key === "+" || key === "=" || key === "Add") next = scale + 5;
+      else if (key === "-" || key === "_" || key === "Subtract") next = scale - 5;
+      else if (key === "0") next = 100;
+      if (next === null) return;
+      e.preventDefault();
+      const value = Math.min(130, Math.max(70, next));
+      setNotice(t("uiscale.toast", { value }));
+      void save({ ...settingsRef.current, uiScale: value, uiAuto: false });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scale, save, t]);
+
+  useEffect(() => {
+    const onNotice = (e: Event) => {
+      const key = (e as CustomEvent<string>).detail;
+      if (key) setNotice(t(key as never));
+    };
+    window.addEventListener("plumbob-notice", onNotice);
+    return () => window.removeEventListener("plumbob-notice", onNotice);
+  }, [t]);
 
   const fail = useCallback((e: unknown) => setError(msg(e instanceof Error ? e.message : String(e))), [msg]);
 
@@ -182,6 +261,64 @@ export default function App() {
     }
   }, [autoPlay, cur?.id, view]);
 
+  const newsOn = settings.announcementsEnabled;
+
+  useEffect(() => {
+    if (!settings.setupDone || !newsOn) {
+      setAnnouncements([]);
+      return;
+    }
+    let live = true;
+    backend
+      .fetchAnnouncements(settings.language, false)
+      .then((items) => {
+        if (!live) return;
+        setAnnouncements(items);
+        const current = settingsRef.current;
+        const fresh = items.filter((i) => (i.pinned || i.kind === "warning") && !current.readAnnouncements.includes(i.id) && !current.toastedAnnouncements.includes(i.id));
+        if (fresh.length === 0) return;
+        setNotice(t("news.toast", { title: fresh[0].title }));
+        void save({ ...current, toastedAnnouncements: [...current.toastedAnnouncements, ...fresh.map((i) => i.id)].slice(-200) });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [settings.setupDone, settings.language, newsOn]);
+
+  const markRead = (ids: string[]) => {
+    const current = settingsRef.current;
+    const known = new Set(announcements.map((i) => i.id));
+    const merged = [...new Set([...current.readAnnouncements.filter((id) => known.size === 0 || known.has(id)), ...ids])].slice(-200);
+    void save({ ...current, readAnnouncements: merged });
+  };
+
+  const unreadNews = announcements.filter((i) => !settings.readAnnouncements.includes(i.id)).length;
+
+  const updateReady = !!appUpdate && shouldNotify(appUpdate.version, settings.ignoredUpdate);
+
+  const clickUpdate = async () => {
+    if (checkingUpdate) return;
+    if (updateReady) return setAppUpdateOpen(true);
+    setCheckingUpdate(true);
+    try {
+      const found = await backend.checkUpdate(true, settings.language);
+      setAppUpdate(found);
+      if (!found) setNotice(t("appupd.upToDate", { version: await appVersion() }));
+      else if (shouldNotify(found.version, settings.ignoredUpdate)) setAppUpdateOpen(true);
+      else setIgnoredAsk(found);
+    } catch (e) {
+      setNotice(msg(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const ignoreUpdate = () => {
+    if (appUpdate) void save({ ...settings, ignoredUpdate: appUpdate.version });
+    setAppUpdateOpen(false);
+  };
+
   if (!setupDone || rerun) {
     return (
       <Wizard
@@ -203,15 +340,21 @@ export default function App() {
     setActivating(i);
   };
 
+  const openIssueFix = (target: Instance) => {
+    if (settings.s4mm.enabled) backend.openS4mm(target.legacy ? null : target.id).catch(fail);
+    else backend.openFolder(target.id, "mods").catch(fail);
+  };
+
   const dialogs = (
     <>
       {activating && <ActivateDialog instance={activating} onClose={() => setActivating(null)} onDone={() => { setNotice(t("activate.done", { name: activating.name })); setActivating(null); void reload(); }} />}
       {status.gameFolderChoose && <GameFolderDialog onDone={() => reload()} />}
       {!status.gameFolderChoose && status.needsSetup && <SetupDialog onDone={() => reload()} />}
-      {hashing && cur && <HashDialog instance={cur} onClose={() => setHashing(false)} />}
+      {hashing && cur && <HashDialog instance={cur} onClose={() => setHashing(false)} onChanged={() => void reload()} />}
       {music && cur && <MusicDialog instance={cur} onClose={() => setMusic(false)} onCount={setSongs} />}
       {updateNotice && cur && <UpdateNotice onAccept={(hide) => { setUpdateNotice(false); if (hide) void save({ ...settings, hideUpdateNotice: true }); void attempt(); }} />}
-      {modWarnings && cur && <ModWarnDialog warnings={modWarnings} canFix={settings.s4mm.enabled} onCancel={() => setModWarnings(null)} onIgnore={() => { setModWarnings(null); void start(); }} onFix={() => { setModWarnings(null); backend.openS4mm(cur.legacy ? null : cur.id).catch(fail); }} />}
+      {modWarnings && cur && <ModWarnDialog warnings={modWarnings} s4mm={settings.s4mm.enabled} onCancel={() => setModWarnings(null)} onIgnore={() => { setModWarnings(null); void start(); }} onFix={() => { setModWarnings(null); openIssueFix(cur); }} />}
+      {issuesView && cur && <ModWarnDialog view warnings={issuesView} s4mm={settings.s4mm.enabled} onCancel={() => setIssuesView(null)} onFix={() => { setIssuesView(null); openIssueFix(cur); }} />}
       {notes && cur && <NotesDialog instance={cur} onClose={() => setNotes(false)} />}
       {editing && cur && <EditDialog instance={cur} active={status.activeId === cur.id} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
       {restoring && cur && <RestoreDialog instance={cur} snapshot={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); setTick((n) => n + 1); reload(); }} />}
@@ -221,16 +364,39 @@ export default function App() {
 
   const openAdd = () => { setPreset(undefined); setAdding(true); };
 
+  const updateDialogs = (
+    <>
+      {newsOpen && <AnnouncementsDialog items={announcements} read={settings.readAnnouncements} onRead={markRead} onClose={() => setNewsOpen(false)} />}
+      {appUpdateOpen && appUpdate && <AppUpdateDialog info={appUpdate} onClose={() => setAppUpdateOpen(false)} onIgnore={ignoreUpdate} />}
+      {ignoredAsk && (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setIgnoredAsk(null)}>
+          <div className="dialog" role="dialog" aria-modal="true">
+            <div className="dialog-body">
+              <h2>{t("appupd.ignoredTitle")}</h2>
+              <p>{t("appupd.ignoredBody", { version: ignoredAsk.version })}</p>
+              <div className="actions">
+                <button type="button" className="ghost" onClick={() => setIgnoredAsk(null)}>{t("common.close")}</button>
+                <button type="button" className="play" onClick={() => { setIgnoredAsk(null); setAppUpdateOpen(true); }}>{t("appupd.show")}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   const nav = (next: "home" | "shots" | "archived" | "settings") => (next === "home" ? setView("home") : goTo(next));
   const shell = (node: React.ReactNode) => (
     <div className="shell">
-      <IconBar view={view} onNav={nav} />
+      <IconBar view={view} onNav={nav} updateReady={updateReady} checking={checkingUpdate} onUpdate={() => void clickUpdate()} news={newsOn ? { unread: unreadNews, onOpen: () => setNewsOpen(true) } : null} />
       <div className="shell-main">{node}</div>
+      {updateDialogs}
+      {notice && ["settings", "shots", "archived"].includes(view) && <div className="toast" role="status" key={notice}>{notice}</div>}
     </div>
   );
 
   if (view === "settings") {
-    return shell(<div className="app single"><SettingsView onBack={() => setView(prevView)} onSetup={() => setRerun(true)} /></div>);
+    return shell(<div className="app single"><SettingsView onBack={() => setView(prevView)} onSetup={() => setRerun(true)} scale={scale} /></div>);
   }
 
   if (view === "archived") {
@@ -314,7 +480,7 @@ export default function App() {
         ) : (
         <main className="scroll" key={cur.id}>
           <section className="hero">
-            <HeroArt colors={cur.colors} cover={settings.instanceIcons[cur.id] ? assetUrl(settings.instanceIcons[cur.id]) : undefined} />
+            <HeroArt colors={colorsFor(cur, settings)} cover={bannerFor(settings, cur.id)} />
             <div className="shade" />
             <div className="hero-actions">
               <button className={"icon-btn tip below right" + (refreshing ? " refreshing" : "")} type="button" data-tip={t("main.refresh")} aria-label={t("main.refresh")} disabled={cur.legacy || refreshing} onClick={refresh}><Icon name="refresh" size={18} /></button>
@@ -360,7 +526,7 @@ export default function App() {
                 <button className="ghost" type="button" onClick={(e) => { burstAt(e.currentTarget); backend.openFolder(cur.id, "root").catch(fail); }}><Icon name="folder" size={14} /> {t("card.openFolder")}</button>
               </>
             } />
-            <HealthCard key={`${cur.id}-${tick}`} instance={cur} versionWarn={mismatch} />
+            <HealthCard key={`${cur.id}-${tick}`} instance={cur} versionWarn={mismatch} onShowIssues={setIssuesView} />
             <section className="card saves-card">
               <h2>{t("card.saves")}</h2>
               <div className="card-list">

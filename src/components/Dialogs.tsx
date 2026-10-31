@@ -6,6 +6,7 @@ import type { Diagnostics, GameOptions, ImportMode, Instance, InstanceKind, Role
 import { DiagWarnings } from "./DiagPanel";
 import InstanceForm from "./InstanceForm";
 import GameOptionsFields, { RECOMMENDED } from "./GameOptionsFields";
+import DeriveWizard from "./DeriveWizard";
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {
   return (
@@ -45,7 +46,7 @@ export function SetupDialog({ onDone }: { onDone: () => void }) {
   );
 }
 
-type Step = "choose" | "create" | "pick" | "adopt" | "import";
+type Step = "choose" | "create" | "pick" | "adopt" | "import" | "derive";
 
 const suggestCode = (path: string) =>
   (path.split(/[\\/]/).filter(Boolean).pop() ?? "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || "Sims";
@@ -67,6 +68,10 @@ export function AddDialog({ instances, preset, onClose, onDone }: { instances: I
     }
   };
 
+  if (step === "derive") {
+    return <DeriveWizard instances={instances} onClose={onClose} onBack={() => setStep("choose")} onDone={onDone} />;
+  }
+
   return (
     <Modal onClose={onClose}>
       {step === "choose" && (
@@ -79,6 +84,10 @@ export function AddDialog({ instances, preset, onClose, onDone }: { instances: I
           <button type="button" className="choice" onClick={() => setStep("pick")}>
             <b>{t("add.existing")}</b>
             <small>{t("add.existingHint")}</small>
+          </button>
+          <button type="button" className="choice" onClick={() => setStep("derive")}>
+            <b>{t("derive.button")}</b>
+            <small>{t("derive.buttonHint")}</small>
           </button>
           <div className="actions"><button type="button" className="ghost" onClick={onClose}>{t("common.cancel")}</button></div>
         </div>

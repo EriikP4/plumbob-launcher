@@ -1,13 +1,15 @@
 {
   "name": "s4im",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "sign:release": "node scripts/sign-release.mjs",
+    "announce:check": "node scripts/announce-check.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

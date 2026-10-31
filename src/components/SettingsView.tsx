@@ -10,7 +10,6 @@ import PathField from "./PathField";
 import PlatformFields from "./PlatformFields";
 import GameFolderPicker from "./GameFolderPicker";
 import DiagPanel from "./DiagPanel";
-import ProfileDialog from "./ProfileDialog";
 
 const S4MM_URL = "https://s4mm.gametimedev.de/";
 const S4MP_URL = "https://www.curseforge.com/sims4/mods/sims-4-multiplayer-mod";
@@ -21,7 +20,7 @@ interface Section { id: string; cat: string; keys: Key[]; el: React.ReactNode }
 
 const THEME_NAMES = ["plumbob", "midnight", "forest", "light", "mica", "acrylic"] as const;
 
-export default function SettingsView({ onBack, onSetup }: { onBack: () => void; onSetup: () => void }) {
+export default function SettingsView({ onBack, onSetup, scale }: { onBack: () => void; onSetup: () => void; scale: number }) {
   const { settings, save, saveSoon, t } = useSettings();
   const [env, setEnv] = useState<Environment | null>(null);
   const [notice, setNotice] = useState(false);
@@ -29,7 +28,6 @@ export default function SettingsView({ onBack, onSetup }: { onBack: () => void; 
   const [themeMsg, setThemeMsg] = useState("");
   const [folder, setFolder] = useState("");
   const [query, setQuery] = useState("");
-  const [profileOpen, setProfileOpen] = useState(false);
   const [support, setSupport] = useState({ mica: false, acrylic: false });
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("general");
 
@@ -91,6 +89,25 @@ export default function SettingsView({ onBack, onSetup }: { onBack: () => void; 
               <input type="checkbox" checked={settings.boot.sound} disabled={!settings.boot.animation} onChange={(e) => set({ boot: { ...settings.boot, sound: e.target.checked } })} />
               <span>{t("settings.bootSound")}</span>
             </label>
+          </section>
+    ) },
+    { id: "updates", cat: "general", keys: ["settings.updates", "settings.updateSound"] as Key[], el: (
+          <section className="card">
+            <h2>{t("settings.updates")}</h2>
+            <label className="check">
+              <input type="checkbox" checked={settings.updateSound} onChange={(e) => set({ updateSound: e.target.checked })} />
+              <span>{t("settings.updateSound")}</span>
+            </label>
+          </section>
+    ) },
+    { id: "news", cat: "general", keys: ["settings.newsTitle", "settings.newsShow", "settings.newsHint"] as Key[], el: (
+          <section className="card">
+            <h2>{t("settings.newsTitle")}</h2>
+            <label className="check">
+              <input type="checkbox" checked={settings.announcementsEnabled} onChange={(e) => set({ announcementsEnabled: e.target.checked })} />
+              <span>{t("settings.newsShow")}</span>
+            </label>
+            <small className="status">{t("settings.newsHint")}</small>
           </section>
     ) },
     { id: "setup", cat: "general", keys: ["settings.setup", "settings.setupBody", "settings.runSetup"] as Key[], el: (
@@ -167,15 +184,21 @@ export default function SettingsView({ onBack, onSetup }: { onBack: () => void; 
             </div>
           </section>
     ) },
-    { id: "profile", cat: "appearance", keys: ["settings.profile", "settings.profileWindows", "settings.profileCustom", "settings.profileNone"] as Key[], el: (
-      <section className="card">
-        <h2>{t("settings.profile")}</h2>
-        <div className="actions left">
-          <button type="button" className="ghost" onClick={() => setProfileOpen(true)}>{t("profile.edit")}</button>
-        </div>
-        <small className="status">{t("settings.profileHint")}</small>
-        {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
-      </section>
+    { id: "uiscale", cat: "appearance", keys: ["uiscale.title", "uiscale.auto", "uiscale.reset"] as Key[], el: (
+          <section className="card">
+            <h2>{t("uiscale.title")}</h2>
+            <label className="check">
+              <input type="checkbox" checked={settings.uiAuto} onChange={(e) => set({ uiAuto: e.target.checked })} />
+              <span>{t("uiscale.auto")}</span>
+            </label>
+            <div className="range-row">
+              <button type="button" className="ghost small" aria-label="−" disabled={scale <= 70} onClick={() => set({ uiScale: Math.max(70, scale - 5), uiAuto: false })}>−</button>
+              <input type="range" min={70} max={130} step={5} value={scale} aria-label={t("uiscale.title")} onChange={(e) => saveSoon({ ...settings, uiScale: Number(e.target.value), uiAuto: false })} />
+              <button type="button" className="ghost small" aria-label="+" disabled={scale >= 130} onClick={() => set({ uiScale: Math.min(130, scale + 5), uiAuto: false })}>+</button>
+              <b className="mono scale-value">{scale}%</b>
+              <button type="button" className="ghost small" disabled={scale === 100 && !settings.uiAuto} onClick={() => set({ uiScale: 100, uiAuto: false })}>{t("uiscale.reset")}</button>
+            </div>
+          </section>
     ) },
     { id: "presence", cat: "discord", keys: ["settings.presence", "settings.presenceEnable", "settings.presenceHide"] as Key[], el: (
           <section className="card">

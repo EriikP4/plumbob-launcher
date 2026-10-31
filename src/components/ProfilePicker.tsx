@@ -11,7 +11,7 @@ export default function ProfilePicker() {
   const { settings, save, t } = useSettings();
   const [win, setWin] = useState<ProfileInfo | null>(null);
   const [busts, setBusts] = useState(false);
-  const { source, custom, name } = settings.profile;
+  const { source, custom, sim, simId, name } = settings.profile;
 
   useEffect(() => {
     backend.profileInfo("windows").then(setWin).catch(() => setWin(null));
@@ -24,14 +24,24 @@ export default function ProfilePicker() {
     if (stored) await save({ ...settings, profile: { ...settings.profile, source: "custom", custom: stored } });
   };
 
+  const storeSim = async (path: string, id: string) => {
+    const stored = await backend.importIcon("profile-sim", path).catch(() => null);
+    if (stored) await save({ ...settings, profile: { ...settings.profile, source: "sim", sim: stored, simId: id } });
+  };
+
   const choose = async () => {
     const [picked] = await pickImages();
     if (picked) await store(picked);
   };
 
-  const useBust = (path: string) => {
+  const useBust = (path: string, id: string) => {
     setBusts(false);
-    void store(path);
+    void storeSim(path, id);
+  };
+
+  const useSim = () => {
+    if (!sim) return setBusts(true);
+    void save({ ...settings, profile: { ...settings.profile, source: "sim" } });
   };
 
   const pick = (next: "windows" | "none") => void save({ ...settings, profile: { ...settings.profile, source: next } });
@@ -65,9 +75,15 @@ export default function ProfilePicker() {
     {
       key: "sim",
       label: t("settings.profileBust"),
-      on: false,
-      click: () => setBusts(true),
-      face: <span className="po-face empty"><Icon name="simphoto" size={30} /></span>,
+      on: source === "sim",
+      click: useSim,
+      face: <span className={"po-face" + (sim ? "" : " empty")}>{sim ? <img src={assetUrl(sim)} alt="" /> : <Icon name="simphoto" size={30} />}</span>,
+      overlay: sim ? (
+        <button type="button" className="po-change" aria-label={t("settings.profileEdit")} onClick={() => setBusts(true)}>
+          <Icon name="simphoto" size={20} />
+          <small>{t("settings.profileEdit")}</small>
+        </button>
+      ) : null,
     },
     {
       key: "none",
@@ -92,7 +108,7 @@ export default function ProfilePicker() {
           <span className={"po-label" + (o.on ? " on" : "")}>{o.label}</span>
         </div>
       ))}
-      {busts && <BustPicker onClose={() => setBusts(false)} onPick={useBust} />}
+      {busts && <BustPicker onClose={() => setBusts(false)} onPick={useBust} selectedId={simId} />}
     </div>
   );
 }

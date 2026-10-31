@@ -5,7 +5,7 @@ import { useSettings } from "../lib/settings";
 import { assetUrl } from "../lib/assets";
 import type { Bust, Instance } from "../lib/types";
 
-export default function BustPicker({ onClose, onPick }: { onClose: () => void; onPick: (path: string) => void }) {
+export default function BustPicker({ onClose, onPick, selectedId }: { onClose: () => void; onPick: (path: string, id: string) => void; selectedId?: string | null }) {
   const { t, msg } = useSettings();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [code, setCode] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export default function BustPicker({ onClose, onPick }: { onClose: () => void; o
           {busts && busts.length > 0 && (
             <div className="bust-grid">
               {busts.map((b) => (
-                <button key={b.id} type="button" className="bust" onClick={() => onPick(b.path)}>
+                <button key={b.id} type="button" className="bust" aria-pressed={b.id === selectedId} onClick={() => onPick(b.path, b.id)}>
                   <img src={assetUrl(b.path)} alt="" loading="lazy" decoding="async" />
                 </button>
               ))}

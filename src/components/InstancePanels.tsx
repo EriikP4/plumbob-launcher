@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { backend } from "../lib/api";
 import { useSettings } from "../lib/settings";
-import type { CacheItem, Health, Instance, SaveInfo, SpaceEntry, Snapshot } from "../lib/types";
+import type { CacheItem, Health, HealthWarning, Instance, SaveInfo, SpaceEntry, Snapshot } from "../lib/types";
 import { compareVersions } from "../lib/format";
 import Icon from "./Icon";
 import CacheDialog from "./CacheDialog";
@@ -218,7 +218,7 @@ function SpaceTab({ code }: { code: string }) {
   );
 }
 
-export function HealthCard({ instance, versionWarn }: { instance: Instance; versionWarn: boolean }) {
+export function HealthCard({ instance, versionWarn, onShowIssues }: { instance: Instance; versionWarn: boolean; onShowIssues: (warnings: HealthWarning[]) => void }) {
   const { t, when } = useSettings();
   const [health, setHealth] = useState<Health | null>(null);
 
@@ -257,7 +257,10 @@ export function HealthCard({ instance, versionWarn }: { instance: Instance; vers
           {health.warnings.map((w) => (
             <div className="row" key={w.kind} title={w.items.join("\n")}>
               <span>{t(`health.${w.kind}`)}</span>
-              <span className="pill warn">{w.count}</span>
+              <span className="row-end">
+                <button type="button" className="ghost small" onClick={() => onShowIssues(health.warnings)}>{t("health.viewIssues")}</button>
+                <span className="pill warn">{w.count}</span>
+              </span>
             </div>
           ))}
           <div className="row">

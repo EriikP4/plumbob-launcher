@@ -4,7 +4,7 @@ import Icon from "./Icon";
 
 const SHOWN = 5;
 
-export default function ModWarnDialog({ warnings, canFix, onFix, onIgnore, onCancel }: { warnings: HealthWarning[]; canFix: boolean; onFix: () => void; onIgnore: () => void; onCancel: () => void }) {
+export default function ModWarnDialog({ warnings, s4mm, view, onFix, onIgnore, onCancel }: { warnings: HealthWarning[]; s4mm: boolean; view?: boolean; onFix: () => void; onIgnore?: () => void; onCancel: () => void }) {
   const { t } = useSettings();
   return (
     <div className="overlay">
@@ -26,9 +26,9 @@ export default function ModWarnDialog({ warnings, canFix, onFix, onIgnore, onCan
             ))}
           </div>
           <div className="actions wrap">
-            <button type="button" className="ghost" onClick={onCancel}>{t("modwarn.cancel")}</button>
-            <button type="button" className="ghost ignore" onClick={onIgnore}>{t("modwarn.ignore")}</button>
-            {canFix && <button type="button" className="fix" onClick={onFix}>{t("modwarn.fix")}</button>}
+            <button type="button" className="ghost" onClick={onCancel}>{view ? t("common.close") : t("modwarn.cancel")}</button>
+            {!view && onIgnore && <button type="button" className="ghost ignore" onClick={onIgnore}>{t("modwarn.ignore")}</button>}
+            <button type="button" className="fix" onClick={onFix}>{s4mm ? t("modwarn.openS4mm") : t("modwarn.openFolder")}</button>
           </div>
         </div>
       </div>

@@ -1,8 +1,9 @@
 import { useSettings } from "../lib/settings";
 import type { GameOptions } from "../lib/types";
+import InfoTip from "./InfoTip";
 
-export const RECOMMENDED: GameOptions = { mods: true, skipDlcIntro: true, noTelemetry: true, music: "half", windowed: true };
-export const NONE: GameOptions = { mods: false, skipDlcIntro: false, noTelemetry: false, music: "keep", windowed: false };
+export const RECOMMENDED: GameOptions = { mods: true, skipDlcIntro: true, noTelemetry: true, music: "half", windowed: true, skipEaIntro: false };
+export const NONE: GameOptions = { mods: false, skipDlcIntro: false, noTelemetry: false, music: "keep", windowed: false, skipEaIntro: false };
 
 const same = (a: GameOptions, b: GameOptions) =>
   a.mods === b.mods && a.skipDlcIntro === b.skipDlcIntro && a.noTelemetry === b.noTelemetry && a.music === b.music && a.windowed === b.windowed;
@@ -26,7 +27,7 @@ export default function GameOptionsFields({ value, onChange }: { value: GameOpti
         <label className="check">
           <input type="checkbox" checked={value.skipDlcIntro} onChange={(e) => set({ skipDlcIntro: e.target.checked })} />
           <span>{t("opts.skipDlc")}</span>
-          <span className="tip left info-dot" tabIndex={0} data-tip={t("opts.skipDlcInfo")} aria-label={t("opts.skipDlcInfo")} onClick={(e) => e.preventDefault()}>i</span>
+          <InfoTip text={t("opts.skipDlcInfo")} />
         </label>
         <label className="check">
           <input type="checkbox" checked={value.noTelemetry} onChange={(e) => set({ noTelemetry: e.target.checked })} />
@@ -45,6 +46,11 @@ export default function GameOptionsFields({ value, onChange }: { value: GameOpti
         <label className="check">
           <input type="checkbox" checked={value.windowed} onChange={(e) => set({ windowed: e.target.checked })} />
           <span>{t("opts.windowed")}</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={value.skipEaIntro} onChange={(e) => set({ skipEaIntro: e.target.checked })} />
+          <span>{t("opts.skipEaIntro")}</span>
+          <InfoTip text={t("opts.skipEaIntroInfo")} />
         </label>
       </div>
     </fieldset>

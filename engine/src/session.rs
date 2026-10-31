@@ -95,7 +95,7 @@ pub fn candidate_install_dirs(platform: Platform) -> Vec<PathBuf> {
 pub fn detect_install_dir(platform: Platform) -> Option<PathBuf> {
     candidate_install_dirs(platform)
         .into_iter()
-        .find(|d| d.join(GAME_EXE).is_file())
+        .find(|d| crate::install::game_exe(d).is_some() || d.join(GAME_EXE).is_file())
 }
 
 pub fn ea_offer_ids(install_dir: &Path) -> Vec<String> {
@@ -122,6 +122,28 @@ pub fn detect_s4mm() -> Option<PathBuf> {
     exe.is_file().then_some(exe)
 }
 
+pub const GAME_ARGS: [&str; 4] = ["-w", "-f", "-nointro", "-nohovereffects"];
+
+pub fn effective_game_args(settings: &Settings) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for arg in &settings.game_args {
+        let arg = arg.trim();
+        if !GAME_ARGS.contains(&arg) || out.iter().any(|a| a == arg) {
+            continue;
+        }
+        let clash = (arg == "-w" && out.iter().any(|a| a == "-f")) || (arg == "-f" && out.iter().any(|a| a == "-w"));
+        if !clash {
+            out.push(arg.to_string());
+        }
+    }
+    out
+}
+
+fn game_exe_path(dir: &Path) -> PathBuf {
+    let root = crate::install::resolve_game_root(dir).unwrap_or_else(|| dir.to_path_buf());
+    crate::install::game_exe(&root).unwrap_or_else(|| root.join(GAME_EXE))
+}
+
 pub fn launch_game(settings: &Settings) -> Result<()> {
     match settings.platform {
         Platform::Steam => {
@@ -143,7 +165,7 @@ pub fn launch_game(settings: &Settings) -> Result<()> {
                     return open_url(&format!("origin2://game/launch?offerIds={}", ids.join(",")));
                 }
             }
-            run_exe(&dir.join(GAME_EXE), &[])
+            run_exe(&game_exe_path(&dir), &[])
         }
         Platform::Custom => {
             let cmd = settings.custom_command.as_deref().map(str::trim).filter(|c| !c.is_empty());
@@ -152,7 +174,7 @@ pub fn launch_game(settings: &Settings) -> Result<()> {
                     .install_dir
                     .as_ref()
                     .ok_or_else(|| EngineError::Invalid("custom command".into()))?;
-                return run_exe(&dir.join(GAME_EXE), &[]);
+                return run_exe(&game_exe_path(dir), &effective_game_args(settings));
             };
             if is_url(cmd) {
                 return open_url(cmd);

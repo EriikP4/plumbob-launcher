@@ -9,10 +9,11 @@ interface Props {
   folder?: boolean;
   extensions?: string[];
   pickLabel?: string;
+  labelExtra?: React.ReactNode;
   onChange: (value: string) => void;
 }
 
-export default function PathField({ label, hint, value, placeholder, folder, extensions, pickLabel, onChange }: Props) {
+export default function PathField({ label, labelExtra, hint, value, placeholder, folder, extensions, pickLabel, onChange }: Props) {
   const { t } = useSettings();
   const pick = async () => {
     const chosen = folder ? await pickFolder() : await pickFile(extensions);
@@ -20,7 +21,7 @@ export default function PathField({ label, hint, value, placeholder, folder, ext
   };
   return (
     <div className="field">
-      <span>{label}</span>
+      <span>{label}{labelExtra}</span>
       {hint && <small>{hint}</small>}
       <div className="path-row">
         <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} spellCheck={false} />

@@ -243,7 +243,7 @@ fn connect() -> Option<File> {
 
 fn update(file: &mut File, activity: Option<&Activity>, nonce: u64) -> bool {
     let value = activity.map(|a| {
-        let mut assets = json!({ "large_image": "main", "large_text": format!("Plumbob Launcher v{}", env!("CARGO_PKG_VERSION")) });
+        let mut assets = json!({ "large_image": "dc_main", "large_text": format!("Plumbob Launcher v{}", env!("CARGO_PKG_VERSION")) });
         if let Some(small) = a.small {
             assets["small_image"] = json!(small);
         }

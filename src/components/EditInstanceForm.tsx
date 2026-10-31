@@ -3,19 +3,23 @@ import { backend } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import type { Instance, Role } from "../lib/types";
 import Icon from "./Icon";
-import { pickImages } from "../lib/native";
-import InstanceThumb from "./InstanceThumb";
+import AppearanceFields from "./AppearanceFields";
+import AppearanceHeader from "./AppearanceHeader";
+import NoIntroCard from "./NoIntroCard";
+import { appearanceOf, applyAppearance, colorChanged, colorsFor, type Appearance } from "../lib/appearance";
 
 type Step = "duplicate" | "convert" | "delete" | "archive" | "trayOn" | "trayOff";
 
 export default function EditInstanceForm({ instance, onClose, onDone, onStep }: { instance: Instance; onClose: () => void; onDone: () => void; onStep: (step: Step) => void }) {
   const { t, msg, settings, save } = useSettings();
-  const [tab, setTab] = useState<"general" | "options">("general");
+  const [tab, setTab] = useState<"general" | "appearance" | "options">("general");
   const [name, setName] = useState(instance.name);
   const [description, setDescription] = useState(instance.description);
   const [role, setRole] = useState<Role | null>(instance.role ?? null);
   const [busy, setBusy] = useState(false);
-  const icon = settings.instanceIcons[instance.id];
+  const [lanIp, setLanIp] = useState(settings.lanHosts?.[instance.id] ?? "");
+  const initial = appearanceOf(instance, settings);
+  const [appearance, setAppearance] = useState<Appearance>(initial);
   const [error, setError] = useState("");
   const multiplayer = settings.multiplayer.enabled;
   const showRole = multiplayer && instance.kind === "mp";
@@ -27,6 +31,11 @@ export default function EditInstanceForm({ instance, onClose, onDone, onStep }: 
     setError("");
     try {
       await backend.updateInstance(instance.id, name, description, showRole ? role : null);
+      const styled = await applyAppearance(instance.id, appearance, settings, colorChanged(appearance, initial));
+      const rest = { ...styled.lanHosts };
+      if (showRole && role === "client" && lanIp.trim()) rest[instance.id] = lanIp.trim();
+      else delete rest[instance.id];
+      await save({ ...styled, lanHosts: rest });
       onDone();
     } catch (err) {
       setError(msg(err instanceof Error ? err.message : String(err)));
@@ -34,23 +43,8 @@ export default function EditInstanceForm({ instance, onClose, onDone, onStep }: 
     }
   };
 
-  const chooseIcon = async () => {
-    setError("");
-    const [picked] = await pickImages();
-    if (!picked) return;
-    try {
-      const stored = await backend.importIcon(instance.id, picked);
-      await save({ ...settings, instanceIcons: { ...settings.instanceIcons, [instance.id]: stored } });
-    } catch (err) {
-      setError(msg(err instanceof Error ? err.message : String(err)));
-    }
-  };
-
-  const removeIcon = () => {
-    const rest = { ...settings.instanceIcons };
-    delete rest[instance.id];
-    void save({ ...settings, instanceIcons: rest });
-  };
+  const storedBanner = settings.instanceBanners?.[instance.id];
+  const existingBanner = storedBanner && storedBanner !== "none" ? storedBanner : undefined;
 
   const kindLabel = multiplayer ? (instance.kind === "solo" ? t("kind.solo") : t("kind.mp")) : "";
   const cards: { key: string; icon: string; title: string; hint?: string; run: () => void }[] = [
@@ -63,12 +57,17 @@ export default function EditInstanceForm({ instance, onClose, onDone, onStep }: 
 
   return (
     <form className="edit-form" onSubmit={submit}>
-      <header className="edit-head">
-        <div className="edit-thumb">
-          <InstanceThumb instance={{ ...instance, name: name || instance.name }} />
-          <button type="button" className="thumb-pencil tip left" data-tip={t("edit.iconChoose")} aria-label={t("edit.iconChoose")} onClick={() => void chooseIcon()}><Icon name="edit" size={12} /></button>
-          {icon && <button type="button" className="thumb-clear tip left" data-tip={t("edit.iconRemove")} aria-label={t("edit.iconRemove")} onClick={removeIcon}><Icon name="close" size={10} /></button>}
-        </div>
+      <AppearanceHeader
+        value={appearance}
+        onChange={setAppearance}
+        fallback={colorsFor(instance, settings)}
+        letter={(name.trim() || instance.name)[0]}
+        immediate={instance.id}
+        editable={tab === "appearance"}
+        existingIcon={settings.instanceIcons[instance.id]}
+        existingBanner={existingBanner}
+        onError={setError}
+      >
         <div className="edit-head-info">
           <h2>{name.trim() || instance.name}</h2>
           <div className="edit-chips">
@@ -77,10 +76,11 @@ export default function EditInstanceForm({ instance, onClose, onDone, onStep }: 
             <span className="pill mono">{instance.id}</span>
           </div>
         </div>
-      </header>
+      </AppearanceHeader>
 
       <div className="edit-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "general"} className={tab === "general" ? "on" : ""} onClick={() => setTab("general")}><Icon name="edit" size={14} /> {t("edit.tabGeneral")}</button>
+        <button type="button" role="tab" aria-selected={tab === "general"} className={tab === "general" ? "on" : ""} onClick={() => setTab("general")}><Icon name="info" size={14} /> {t("edit.tabGeneral")}</button>
+        <button type="button" role="tab" aria-selected={tab === "appearance"} className={tab === "appearance" ? "on" : ""} onClick={() => setTab("appearance")}><Icon name="brush" size={14} /> {t("edit.tabAppearance")}</button>
         <button type="button" role="tab" aria-selected={tab === "options"} className={tab === "options" ? "on" : ""} onClick={() => setTab("options")}><Icon name="gear" size={14} /> {t("edit.tabOptions")}</button>
       </div>
 
@@ -108,17 +108,30 @@ export default function EditInstanceForm({ instance, onClose, onDone, onStep }: 
                 </div>
               </div>
             )}
+            {showRole && role === "client" && (
+              <label className="field">
+                <span>{t("lan.formIp")}</span>
+                <small>{t("lan.formIpHint")}</small>
+                <input value={lanIp} placeholder="192.168.1.130" spellCheck={false} onChange={(e) => setLanIp(e.target.value)} />
+              </label>
+            )}
           </>
         )}
+        {tab === "appearance" && (
+          <AppearanceFields value={appearance} onChange={setAppearance} />
+        )}
         {tab === "options" && (
-          <div className="act-grid">
-            {cards.map((c) => (
-              <button key={c.key} type="button" className="act-card" onClick={c.run}>
-                <span className="act-icon"><Icon name={c.icon} size={20} /></span>
-                <span className="act-text"><b>{c.title}</b>{c.hint && <small>{c.hint}</small>}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="act-grid">
+              {cards.map((c) => (
+                <button key={c.key} type="button" className="act-card" onClick={c.run}>
+                  <span className="act-icon"><Icon name={c.icon} size={20} /></span>
+                  <span className="act-text"><b>{c.title}</b>{c.hint && <small>{c.hint}</small>}</span>
+                </button>
+              ))}
+            </div>
+            <NoIntroCard code={instance.id} />
+          </>
         )}
       </div>
 

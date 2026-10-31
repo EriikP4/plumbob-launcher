@@ -23,6 +23,7 @@ pub struct GameOptions {
     pub no_telemetry: bool,
     pub music: MusicChoice,
     pub windowed: bool,
+    pub skip_ea_intro: bool,
 }
 
 fn updates(opts: &GameOptions) -> Vec<(&'static str, String)> {

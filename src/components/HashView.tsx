@@ -4,6 +4,7 @@ import { useSettings } from "../lib/settings";
 import { pickSavePath, pickTextFiles } from "../lib/native";
 import type { CodeCheck, Instance, ModDiff, ModFile, ModScan } from "../lib/types";
 import Icon from "./Icon";
+import LanSyncDialog from "./LanSyncDialog";
 
 function parseManifest(text: string): ModFile[] | null {
   try {
@@ -34,7 +35,7 @@ function FileList({ title, tone, files }: { title: string; tone: "warn" | "muted
   );
 }
 
-export default function HashDialog({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+export default function HashDialog({ instance, onClose, onChanged }: { instance: Instance; onClose: () => void; onChanged?: () => void }) {
   const { t, msg, size } = useSettings();
   const [scan, setScan] = useState<ModScan | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -45,6 +46,8 @@ export default function HashDialog({ instance, onClose }: { instance: Instance; 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState<"choose" | "code">("choose");
+  const [lan, setLan] = useState(false);
 
   useEffect(() => {
     const off = backend.onHashProgress((p) => setProgress({ done: p.done, total: Math.max(1, p.total) }));
@@ -174,17 +177,39 @@ export default function HashDialog({ instance, onClose }: { instance: Instance; 
   );
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !scanning && onClose()}>
-      <div className="dialog wide hash-dialog" role="dialog" aria-modal="true">
-        <div className="dialog-body">
-          <h2 className="notice-title"><Icon name="shield" size={22} /> {t("hash.title", { name: instance.name })}</h2>
-          {instance.role && <small className="status">{instance.role === "host" ? t("role.hostHint") : t("role.clientHint")}</small>}
-          {isClient ? [other, mine] : [mine, other]}
-          {message && <small className="status">{message}</small>}
-          {error && <p className="error" role="alert">{error}</p>}
-          <div className="actions"><button type="button" className="ghost" disabled={scanning} onClick={onClose}>{t("common.close")}</button></div>
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !scanning && !lan && onClose()}>
+      {lan ? (
+        <LanSyncDialog key="lan" bare instance={instance} onClose={onClose} onChanged={onChanged} />
+      ) : mode === "choose" ? (
+        <div key="choose" className="dialog" role="dialog" aria-modal="true">
+          <div className="dialog-body">
+            <h2 className="notice-title"><Icon name="shield" size={22} /> {t("hash.title", { name: instance.name })}</h2>
+            <button type="button" className="choice" onClick={() => setLan(true)}>
+              <b>{t("hash.methodLan")}</b>
+              <small>{t("hash.methodLanHint")}</small>
+            </button>
+            <button type="button" className="choice" onClick={() => setMode("code")}>
+              <b>{t("hash.methodCode")}</b>
+              <small>{t("hash.methodCodeHint")}</small>
+            </button>
+            <div className="actions"><button type="button" className="ghost" onClick={onClose}>{t("common.cancel")}</button></div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div key="code" className="dialog wide hash-dialog" role="dialog" aria-modal="true">
+          <div className="dialog-body">
+            <h2 className="notice-title"><Icon name="shield" size={22} /> {t("hash.methodCode")}</h2>
+            {instance.role && <small className="status">{instance.role === "host" ? t("role.hostHint") : t("role.clientHint")}</small>}
+            {isClient ? [other, mine] : [mine, other]}
+            {message && <small className="status">{message}</small>}
+            {error && <p className="error" role="alert">{error}</p>}
+            <div className="actions">
+              <button type="button" className="ghost" disabled={scanning} onClick={() => setMode("choose")}>{t("common.back")}</button>
+              <button type="button" className="ghost" disabled={scanning} onClick={onClose}>{t("common.close")}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

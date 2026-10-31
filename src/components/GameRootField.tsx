@@ -13,6 +13,7 @@ export default function GameRootField({ value, onCommit }: Props) {
   const { t } = useSettings();
   const [text, setText] = useState(value ?? "");
   const [check, setCheck] = useState<RootCheck | null>(null);
+  const [adjusted, setAdjusted] = useState<string | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
@@ -28,6 +29,10 @@ export default function GameRootField({ value, onCommit }: Props) {
         setCheck(c);
         if (c.state === "ok") {
           if (path !== value) onCommit(path);
+        } else if (c.state === "inside" && c.root) {
+          setAdjusted(c.root);
+          setText(c.root);
+          if (c.root !== value) onCommit(c.root);
         }
       }).catch(() => undefined);
     }, 250);
@@ -36,15 +41,10 @@ export default function GameRootField({ value, onCommit }: Props) {
 
   return (
     <div className="game-root">
-      <PathField label={t("root.label")} hint={t("root.hint")} folder value={text} onChange={setText} />
+      <PathField label={t("root.label")} hint={t("root.hint")} folder value={text} onChange={(v) => { setAdjusted(null); setText(v); }} />
       {!text.trim() && <small className="status warn">{t("root.required")}</small>}
       {check?.state === "ok" && <small className="status ok-text">{check.version ? t("root.okVersion", { version: check.version }) : t("root.ok")}</small>}
-      {check?.state === "inside" && check.root && (
-        <small className="status warn">
-          {t("root.inside", { root: check.root })}{" "}
-          <button type="button" className="ghost small" onClick={() => setText(check.root!)}>{t("root.use")}</button>
-        </small>
-      )}
+      {adjusted && <small className="status">{t("root.adjusted", { root: adjusted })}</small>}
       {check?.state === "invalid" && <small className="status warn">{t("root.invalid")}</small>}
     </div>
   );

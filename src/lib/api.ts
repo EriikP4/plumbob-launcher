@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
-  ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, TrayOldInfo, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
+  ArchivedInstance, CacheItem, ClearReport, Diagnostics, CodeCheck, GameFolderCheck, ModDiff, ModFile, ModScan, Role, DeleteStats, Announcement, TrayOldInfo, UpdateAsset, UpdateInfo, LanHostInfo, LanHostStatus, LanAddress, LanDiff, LanPlan, LanReport, LanProgress, BaseScan, ModEntry, DeriveInput, Environment, Genre, Health, RootCheck, SpaceEntry, ImportInput, Instance, InstanceInput, InstanceKind, LaunchMode, SaveInfo, SessionEnd, Settings, Shot,
   Bust, EffectSupport, PresenceState, ProfileInfo, ShotsProgress, ShotsStatus, Snapshot, Status, Transfer, TrayDisable,
 } from "./types";
 import { INSTANCES, SAVES, SNAPSHOTS } from "./sample";
@@ -65,6 +65,29 @@ export interface Backend {
   disableTraySync(code: string, mode: TrayDisable): Promise<void>;
   onShotsProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
   registerMain(input: Omit<InstanceInput, "kind"> & { kind?: InstanceKind }): Promise<void>;
+  noIntroStatus(code: string): Promise<boolean>;
+  installNoIntro(code: string): Promise<string>;
+  removeNoIntro(code: string): Promise<boolean>;
+  setUiScale(percent: number | null): Promise<number>;
+  checkUpdate(force: boolean, lang: string): Promise<UpdateInfo | null>;
+  fetchAnnouncements(lang: string, force: boolean): Promise<Announcement[]>;
+  installMethod(): Promise<"installer" | "portable">;
+  installUpdate(installer: UpdateAsset, version: string): Promise<void>;
+  onUpdateProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
+  lanHostStart(code: string): Promise<LanHostInfo>;
+  lanHostStop(): Promise<void>;
+  lanHostStatus(): Promise<LanHostStatus | null>;
+  lanHostAnswer(ip: string, allow: boolean, remember: boolean): Promise<void>;
+  lanHostForget(ip: string): Promise<void>;
+  lanAddresses(): Promise<LanAddress[]>;
+  lanDiff(code: string, addr: string): Promise<LanDiff>;
+  lanSync(code: string, addr: string, plan: LanPlan): Promise<LanReport>;
+  onLanProgress(cb: (p: LanProgress) => void): Promise<() => void>;
+  onLanWaiting(cb: () => void): Promise<() => void>;
+  scanBase(code: string): Promise<BaseScan>;
+  listModDir(code: string, rel: string): Promise<ModEntry[]>;
+  deriveInstance(input: DeriveInput): Promise<void>;
+  onDeriveProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
   trayOldInfo(code: string): Promise<TrayOldInfo | null>;
   deleteTrayOld(code: string): Promise<void>;
   onBustsProgress(cb: (p: ShotsProgress) => void): Promise<() => void>;
@@ -217,10 +240,21 @@ const sampleSettings: Settings = {
   autoSnapshots: true,
   hideUpdateNotice: false,
   gameFolder: null,
-  profile: { source: "windows", custom: null, name: null },
+  profile: { source: "windows", custom: null, sim: null, simId: null, name: null },
   instanceIcons: {},
+  lanHosts: {},
+  instanceColors: {},
+  instanceBanners: {},
+  ignoredUpdate: null,
+  updateSound: true,
+  uiScale: 100,
+  uiAuto: true,
+  gameArgs: [],
   tools: [],
   musicWelcomeSeen: false,
+  announcementsEnabled: true,
+  readAnnouncements: [],
+  toastedAnnouncements: [],
 };
 
 const GB_SAMPLE = 1024 ** 3;
@@ -336,6 +370,59 @@ export const sampleBackend: Backend = {
     return () => void sampleProgress.delete(cb);
   },
   registerMain: unavailable,
+  noIntroStatus: async () => false,
+  installNoIntro: async () => "NoIntro.package",
+  removeNoIntro: async () => true,
+  setUiScale: async (percent) => percent ?? 100,
+  fetchAnnouncements: async (lang) => {
+    const es = lang === "es";
+    const longText = (es ? "Un evento de la comunidad.\n" + "\nCon un párrafo largo para comprobar que se pliega y se expande correctamente en el panel de novedades. " : "A community event.\n\nWith a long paragraph to check that it folds and expands correctly in the news panel. ").repeat(6);
+    return [
+      { id: "s-pin", date: "2026-11-01", kind: "warning", pinned: true, title: es ? "Aviso importante de ejemplo" : "Sample important notice", body: es ? "Este anuncio está fijado.\n- Primer punto" + "\n- Segundo punto con **negrita**" : "This announcement is pinned.\n- First point\n- Second point with **bold**", link: null },
+      { id: "s-upd", date: "2026-10-31", kind: "update", pinned: false, title: es ? "Novedad de actualización de ejemplo" : "Sample update news", body: es ? "Hay una versión nueva con mejoras." : "A new version with improvements is available.", link: { url: "https://github.com/EriikP4/plumbob-launcher/releases", label: es ? "Ver versiones" : "View releases" } },
+      { id: "s-evt", date: "2026-10-30", kind: "event", pinned: false, title: es ? "Evento de ejemplo" : "Sample event", body: longText, link: null },
+      { id: "s-info", date: "2026-10-29", kind: "info", pinned: false, title: es ? "Información de ejemplo" : "Sample information", body: es ? "Un mensaje informativo breve." : "A short informative message.", link: null },
+    ];
+  },
+  checkUpdate: async () => ({
+    version: "0.3.0",
+    tag: "v0.3.0-alpha",
+    name: "Plumbob Launcher 0.3.0",
+    notes: "## New\n- Create an instance from another one.\n- Sync mods over LAN.\n- Update notices.\n\n## Fixed\n- Picking the Sim photo on first setup.",
+    page: "https://github.com/EriikP4/plumbob-launcher/releases",
+    published: null,
+    installer: { name: "Plumbob-Launcher-0.3.0-windows-x64-setup.exe", url: "fake://installer", sigUrl: "fake://installer.sig", size: 3_200_000 },
+  }),
+  installMethod: async () => "installer",
+  installUpdate: unavailable,
+  onUpdateProgress: async () => () => undefined,
+  lanHostStart: async (code) => ({ addresses: [{ ip: "192.168.1.130", name: "Ethernet" }, { ip: "10.8.0.5", name: "VPN" }], listen: "0.0.0.0:47321", port: 47321, name: code, files: 214, bytes: 1.4 * 1024 ** 3, gameVersion: "1.128.90.1030" }),
+  lanHostStop: async () => undefined,
+  lanHostStatus: async () => ({ clients: 1, servedBytes: 42 * 1024 ** 2, pending: [{ ip: "192.168.1.131", name: "PC-ANA" }], trusted: ["192.168.1.132"] }),
+  lanHostAnswer: async () => undefined,
+  lanHostForget: async () => undefined,
+  lanAddresses: async () => [{ ip: "192.168.1.130", name: "Ethernet" }],
+  lanDiff: async () => ({
+    hostName: "Cheesies",
+    hostVersion: "1.128.90.1030",
+    localVersion: "1.127.10.1020",
+    hostFiles: 214,
+    localFiles: 200,
+    missing: [
+      { path: "WickedWhims/ww_main.ts4script", name: "ww_main.ts4script", size: 3 * 1024 ** 2, hash: "a1", group: "wickedwhims" },
+      { path: "CC/hair.package", name: "hair.package", size: 12 * 1024 ** 2, hash: "a2", group: null },
+      { path: "z_ES_strings.package", name: "z_ES_strings.package", size: 800 * 1024, hash: "a3", group: "translations" },
+    ],
+    different: [{ host: { path: "mccc.ts4script", name: "mccc.ts4script", size: 900 * 1024, hash: "b1", group: "mccc" }, local: { path: "mccc.ts4script", name: "mccc.ts4script", size: 800 * 1024, hash: "b0", group: "mccc" } }],
+    extra: [{ path: "CC/old.package", name: "old.package", size: 4 * 1024 ** 2, hash: "c1", group: null }],
+  }),
+  lanSync: unavailable,
+  onLanProgress: async () => () => undefined,
+  onLanWaiting: async () => () => undefined,
+  scanBase: async () => ({ hasConfig: true, configFiles: ["Options.ini"], hasMods: true, modsFiles: 320, modsBytes: 410 * 1024 ** 2, groups: [{ id: "wickedwhims", files: 40, bytes: 60 * 1024 ** 2 }, { id: "mccc", files: 12, bytes: 9 * 1024 ** 2 }, { id: "translations", files: 6, bytes: 3 * 1024 ** 2 }] }),
+  listModDir: async (_code, rel) => (rel ? [] : [{ name: "CC", rel: "CC", isDir: true, files: 120, bytes: 80 * 1024 ** 2 }, { name: "mod.package", rel: "mod.package", isDir: false, files: 1, bytes: 2048 }]),
+  deriveInstance: unavailable,
+  onDeriveProgress: async () => () => undefined,
   trayOldInfo: async () => ({ path: "C:\Users\You\Documents\Electronic Arts\The Sims 4_solo\TrayOld", files: 120, bytes: 85 * 1024 ** 2 }),
   deleteTrayOld: async () => undefined,
   onBustsProgress: async () => () => undefined,
@@ -366,6 +453,14 @@ export const sampleBackend: Backend = {
     return () => void sampleListeners.delete(cb);
   },
   saveOrder: async () => undefined,
+};
+
+const tryNoIntro = async (code: string) => {
+  try {
+    await call("install_no_intro", { code });
+  } catch {
+    window.dispatchEvent(new CustomEvent("plumbob-notice", { detail: "nointro.failedCreate" }));
+  }
 };
 
 export const tauriBackend: Backend = {
@@ -428,10 +523,39 @@ export const tauriBackend: Backend = {
   disableTraySync: async (code, mode) => void (await call("disable_tray_sync", { code, mode })),
   onShotsProgress: (cb) => listen<ShotsProgress>("shots-progress", (e) => cb(e.payload)),
   registerMain: async (i) => void (await call("register_main", i)),
+  noIntroStatus: (code) => call<boolean>("no_intro_status", { code }),
+  installNoIntro: (code) => call<string>("install_no_intro", { code }),
+  removeNoIntro: (code) => call<boolean>("remove_no_intro", { code }),
+  setUiScale: (percent) => call<number>("set_ui_scale", { percent }),
+  checkUpdate: (force, lang) => call<UpdateInfo | null>("check_update", { force, lang }),
+  fetchAnnouncements: (lang, force) => call<Announcement[]>("fetch_announcements", { lang, force }),
+  installMethod: () => call<"installer" | "portable">("install_method"),
+  installUpdate: async (installer, version) => void (await call("install_update", { installer, version })),
+  onUpdateProgress: (cb) => listen<ShotsProgress>("update-progress", (e) => cb(e.payload)),
+  lanHostStart: (code) => call<LanHostInfo>("lan_host_start", { code }),
+  lanHostStop: async () => void (await call("lan_host_stop")),
+  lanHostStatus: () => call<LanHostStatus | null>("lan_host_status"),
+  lanHostAnswer: async (ip, allow, remember) => void (await call("lan_host_answer", { ip, allow, remember })),
+  lanHostForget: async (ip) => void (await call("lan_host_forget", { ip })),
+  lanAddresses: () => call<LanAddress[]>("lan_addresses"),
+  lanDiff: (code, addr) => call<LanDiff>("lan_diff", { code, addr }),
+  lanSync: (code, addr, plan) => call<LanReport>("lan_sync", { code, addr, plan }),
+  onLanProgress: (cb) => listen<LanProgress>("lan-progress", (e) => cb(e.payload)),
+  onLanWaiting: (cb) => listen("lan-waiting", () => cb()),
+  scanBase: (code) => call<BaseScan>("scan_base", { code }),
+  listModDir: (code, rel) => call<ModEntry[]>("list_mod_dir", { code, rel }),
+  deriveInstance: async (i) => {
+    await call("derive_instance", { ...i });
+    if (i.options?.skipEaIntro && !i.selection.config) await tryNoIntro(i.code);
+  },
+  onDeriveProgress: (cb) => listen<ShotsProgress>("derive-progress", (e) => cb(e.payload)),
   trayOldInfo: (code) => call<TrayOldInfo | null>("tray_old_info", { code }),
   deleteTrayOld: async (code) => void (await call("delete_tray_old", { code })),
   onBustsProgress: (cb) => listen<ShotsProgress>("busts-progress", (e) => cb(e.payload)),
-  createInstance: async (i) => void (await call("create_instance", { ...i })),
+  createInstance: async (i) => {
+    await call("create_instance", { ...i });
+    if (i.options?.skipEaIntro) await tryNoIntro(i.code);
+  },
   adoptInstance: async (i) => void (await call("adopt_instance", { ...i })),
   importInstance: async (i) => void (await call("import_instance", { ...i })),
   play: async (code, mode) => void (await call("play", { code, mode })),

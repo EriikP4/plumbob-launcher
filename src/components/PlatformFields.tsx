@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useSettings } from "../lib/settings";
 import type { Environment, Platform, Settings } from "../lib/types";
 import PathField from "./PathField";
 import GameRootField from "./GameRootField";
+import InfoButton from "./InfoButton";
+import ArgsDialog from "./ArgsDialog";
 
 interface Props {
   value: Settings;
@@ -13,6 +16,8 @@ const OPTIONS: Platform[] = ["steam", "ea", "epic", "custom"];
 
 export default function PlatformFields({ value, env, onChange }: Props) {
   const { t } = useSettings();
+  const [args, setArgs] = useState(false);
+  const commandSet = (value.customCommand ?? "").trim() !== "";
   const detected = value.platform === "ea" ? env?.ea : value.platform === "epic" ? env?.epic : null;
 
   const choose = (platform: Platform) => {
@@ -36,12 +41,16 @@ export default function PlatformFields({ value, env, onChange }: Props) {
           <small className="status">{detected ? t("common.detected", { path: detected }) : t("common.notFound")}</small>
         </>
       )}
+      {args && <ArgsDialog mode={value.platform === "custom" ? "exe" : "copy"} locked={value.platform === "custom" && commandSet} value={value.gameArgs ?? []} onChange={(gameArgs) => onChange({ ...value, gameArgs })} onClose={() => setArgs(false)} />}
       {value.platform === "custom" && (
         <>
         <GameRootField value={value.installDir} onCommit={(installDir) => onChange({ ...value, installDir })} />
-        <PathField label={t("wizard.customCommand")} hint={t("wizard.customHint2")} placeholder={t("wizard.customDefault")} pickLabel={t("wizard.pickExe")} extensions={["exe"]} value={value.customCommand ?? ""} onChange={(v) => onChange({ ...value, customCommand: v || null })} />
+        <PathField label={t("wizard.customCommand")} labelExtra={<InfoButton title={t("custom.infoTitle")} text={t("custom.infoBody")} />} hint={t("wizard.customHint2")} placeholder={t("wizard.customDefault")} pickLabel={t("wizard.pickExe")} extensions={["exe"]} value={value.customCommand ?? ""} onChange={(v) => onChange({ ...value, customCommand: v || null })} />
         </>
       )}
+      <div className="actions left">
+        <button type="button" className="ghost" onClick={() => setArgs(true)}>{t("args.button")}</button>
+      </div>
     </div>
   );
 }

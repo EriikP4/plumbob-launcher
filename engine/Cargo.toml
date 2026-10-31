@@ -1,6 +1,6 @@
 [package]
 name = "s4im-engine"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "Plumbob Launcher engine: instances, snapshots and activation. No UI or Tauri dependency."
 
@@ -12,6 +12,8 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 dirs = "6"
 trash = "5"
 blake3 = "1"
+base64 = "0.22"
+minisign-verify = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 

@@ -2,7 +2,7 @@ use s4im_engine::{apply_game_options, GameOptions, MusicChoice};
 use std::fs;
 
 fn all() -> GameOptions {
-    GameOptions { mods: true, skip_dlc_intro: true, no_telemetry: true, music: MusicChoice::Half, windowed: true }
+    GameOptions { mods: true, skip_dlc_intro: true, no_telemetry: true, music: MusicChoice::Half, windowed: true, skip_ea_intro: false }
 }
 
 #[test]

@@ -4,6 +4,8 @@ use s4im_engine::{
     ArchivedInstance, Config, Diagnostics, EngineError, ImportMode, InstanceKind, InstanceSummary, Platform, SaveInfo, SessionEnd,
     DeleteStats, GameFolderCheck, GameOptions, ModDiff, ModFile, ModScan, Role, Genre, Health, RootCheck, CacheItem, ClearReport, MergeReport, SpaceEntry, Settings, Shot, SnapshotInfo, SnapshotKind, Transfer, TrayDisable,
 };
+mod netfetch;
+mod news;
 mod presence;
 mod watcher;
 
@@ -107,6 +109,23 @@ fn text(e: EngineError) -> String {
         EngineError::Invalid(m) if m.starts_with("archive exists") => "err.archiveExists".into(),
         EngineError::Invalid(m) if m.starts_with("archive incomplete") => "err.archiveIncomplete".into(),
         EngineError::Invalid(m) if m.starts_with("archive corrupt") => "err.archiveCorrupt".into(),
+        EngineError::Invalid(m) if m.starts_with("lan denied") => "err.lanDenied".into(),
+        EngineError::Invalid(m) if m.starts_with("lan expired") => "err.lanExpired".into(),
+        EngineError::Invalid(m) if m.starts_with("lan busy") => "err.lanBusy".into(),
+        EngineError::Invalid(m) if m.starts_with("lan connect") => "err.lanConnect".into(),
+        EngineError::Invalid(m) if m.starts_with("lan hash") => "err.lanHash".into(),
+        EngineError::Invalid(m) if m.starts_with("lan frame") => "err.lanFrame".into(),
+        EngineError::Invalid(m) if m.starts_with("lan range") => "err.lanRange".into(),
+        EngineError::Invalid(m) if m.starts_with("lan peer") => "err.lanPeer".into(),
+        EngineError::Invalid(m) if m.starts_with("lan timeout") => "err.lanTimeout".into(),
+        EngineError::Invalid(m) if m.starts_with("lan refused") => "err.lanRefused".into(),
+        EngineError::Invalid(m) if m.starts_with("lan unreachable") => "err.lanUnreachable".into(),
+        EngineError::Invalid(m) if m.starts_with("lan address") => "err.lanAddress".into(),
+        EngineError::Invalid(m) if m.starts_with("lan version") => "err.lanVersion".into(),
+        EngineError::Invalid(m) if m.starts_with("lan protocol") => "err.lanProtocol".into(),
+        EngineError::Invalid(m) if m.starts_with("nointro") => "err.noIntro".into(),
+        EngineError::Invalid(m) if m.starts_with("derive no mods") => "err.deriveNoMods".into(),
+        EngineError::Invalid(m) if m.starts_with("derive path") => "err.derivePath".into(),
         EngineError::Invalid(m) if m.starts_with("copy mismatch") => "err.copyMismatch".into(),
         EngineError::Invalid(m) if m.starts_with("move incomplete") => "err.moveIncomplete".into(),
         other => other.to_string(),
@@ -223,6 +242,436 @@ async fn register_main(name: String, description: String, code: String, kind: Op
             }
         }
         apply_tray_default(&cfg, summary)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn scan_base(code: String) -> Result<s4im_engine::BaseScan, String> {
+    blocking(move || {
+        let cfg = config()?;
+        s4im_engine::scan_base(&cfg.game_root, &code).map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn list_mod_dir(code: String, rel: String) -> Result<Vec<s4im_engine::ModEntry>, String> {
+    blocking(move || {
+        let cfg = config()?;
+        s4im_engine::list_mod_dir(&cfg.game_root, &code, &rel).map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn derive_instance(
+    app: AppHandle,
+    base: String,
+    name: String,
+    description: String,
+    code: String,
+    kind: InstanceKind,
+    role: Option<Role>,
+    options: Option<GameOptions>,
+    selection: s4im_engine::DeriveSelection,
+) -> Result<InstanceSummary, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let mut last = std::time::Instant::now() - Duration::from_secs(1);
+        let summary = s4im_engine::derive_instance(
+            &cfg.game_root,
+            &base,
+            &name,
+            &description,
+            &code,
+            kind,
+            &selection,
+            &mut |done, total| {
+                if done >= total || last.elapsed() >= Duration::from_millis(80) {
+                    last = std::time::Instant::now();
+                    let _ = app.emit("derive-progress", ShotsProgress { done: done as usize, total: total as usize });
+                }
+            },
+        )
+        .map_err(text)?;
+        if !selection.config {
+            if let Some(opts) = options {
+                s4im_engine::apply_game_options(&summary.path, &opts).map_err(text)?;
+            }
+        }
+        let summary = if role.is_some() {
+            s4im_engine::set_instance_role(&cfg.game_root, &summary.id, role).map_err(text)?
+        } else {
+            summary
+        };
+        apply_tray_default(&cfg, summary)
+    })
+    .await
+}
+
+static LAN_HOST: std::sync::Mutex<Option<s4im_engine::LanHost>> = std::sync::Mutex::new(None);
+
+#[derive(Clone, Serialize)]
+struct LanProgress {
+    phase: String,
+    done: u64,
+    total: u64,
+}
+
+fn stop_lan_host() {
+    let host = LAN_HOST.lock().ok().and_then(|mut g| g.take());
+    if let Some(host) = host {
+        host.stop();
+    }
+}
+
+fn hash_cache(cfg: &Config, code: &str) -> Option<PathBuf> {
+    cfg.order_file.parent().map(|p| p.join("hashcache").join(format!("{code}.json")))
+}
+
+#[tauri::command]
+async fn lan_host_start(app: AppHandle, code: String) -> Result<s4im_engine::LanHostInfo, String> {
+    blocking(move || {
+        let cfg = config()?;
+        if !s4im_engine::valid_code(&code) {
+            return Err("err.codeInvalid".into());
+        }
+        stop_lan_host();
+        let cache = hash_cache(&cfg, &code);
+        let host = s4im_engine::start_host(&cfg.game_root, &code, cache.as_deref(), &|done, total| {
+            let _ = app.emit("hash-progress", ShotsProgress { done: done as usize, total: total as usize });
+        })
+        .map_err(text)?;
+        let info = host.info();
+        if let Ok(mut guard) = LAN_HOST.lock() {
+            *guard = Some(host);
+        }
+        Ok(info)
+    })
+    .await
+}
+
+#[tauri::command]
+fn lan_host_stop() {
+    stop_lan_host();
+}
+
+#[tauri::command]
+fn lan_host_status() -> Option<s4im_engine::LanHostStatus> {
+    LAN_HOST.lock().ok().and_then(|g| g.as_ref().map(|h| h.status()))
+}
+
+#[tauri::command]
+fn lan_host_answer(ip: String, allow: bool, remember: bool) {
+    if let Ok(g) = LAN_HOST.lock() {
+        if let Some(host) = g.as_ref() {
+            host.answer(&ip, allow, remember);
+        }
+    }
+}
+
+#[tauri::command]
+fn lan_host_forget(ip: String) {
+    if let Ok(g) = LAN_HOST.lock() {
+        if let Some(host) = g.as_ref() {
+            host.forget(&ip);
+        }
+    }
+}
+
+#[tauri::command]
+async fn lan_addresses() -> Vec<s4im_engine::LanAddress> {
+    blocking(move || Ok(s4im_engine::local_addresses())).await.unwrap_or_default()
+}
+
+#[tauri::command]
+async fn lan_diff(app: AppHandle, code: String, addr: String) -> Result<s4im_engine::LanDiff, String> {
+    blocking(move || {
+        let cfg = config()?;
+        if !s4im_engine::valid_code(&code) {
+            return Err("err.codeInvalid".into());
+        }
+        let cache = hash_cache(&cfg, &code);
+        let waiting = app.clone();
+        s4im_engine::lan_diff(
+            &cfg.game_root,
+            &code,
+            &addr,
+            cache.as_deref(),
+            &|done, total| {
+                let _ = app.emit("hash-progress", ShotsProgress { done: done as usize, total: total as usize });
+            },
+            &|| {
+                let _ = waiting.emit("lan-waiting", ());
+            },
+        )
+        .map_err(text)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn lan_sync(app: AppHandle, code: String, addr: String, plan: s4im_engine::LanPlan) -> Result<s4im_engine::LanReport, String> {
+    blocking(move || {
+        let cfg = config()?;
+        if !s4im_engine::valid_code(&code) {
+            return Err("err.codeInvalid".into());
+        }
+        let mut last = std::time::Instant::now() - Duration::from_secs(1);
+        let waiting = app.clone();
+        s4im_engine::sync_from_host(
+            &cfg.game_root,
+            &code,
+            &addr,
+            &plan,
+            &mut |phase, done, total| {
+                if done >= total || last.elapsed() >= Duration::from_millis(80) {
+                    last = std::time::Instant::now();
+                    let _ = app.emit("lan-progress", LanProgress { phase: phase.to_string(), done, total });
+                }
+            },
+            &|| {
+                let _ = waiting.emit("lan-waiting", ());
+            },
+        )
+        .map_err(text)
+    })
+    .await
+}
+
+static UPDATE_CACHE: std::sync::Mutex<Option<(std::time::Instant, Option<s4im_engine::UpdateInfo>)>> = std::sync::Mutex::new(None);
+const UPDATE_TTL: Duration = Duration::from_secs(180);
+const MAX_INSTALLER_BYTES: u64 = 300 * 1024 * 1024;
+
+fn fake_update(lang: &str) -> Option<s4im_engine::UpdateInfo> {
+    std::env::var_os("PLUMBOB_FAKE_UPDATE")?;
+    let current = s4im_engine::parse_version(env!("CARGO_PKG_VERSION"))?;
+    let version = format!("{}.{}.0", current.0, current.1 + 1);
+    Some(s4im_engine::UpdateInfo {
+        tag: format!("v{version}-alpha"),
+        name: format!("Plumbob Launcher {version}"),
+        notes: if lang == "es" { "- Primer cambio de ejemplo\n- Segundo cambio de ejemplo\n- **Corrección** de ejemplo".into() } else { "- Example change one\n- Example change two\n- Example **fix**".into() },
+        page: "https://github.com/EriikP4/plumbob-launcher/releases".into(),
+        published: None,
+        installer: Some(s4im_engine::UpdateAsset {
+            name: format!("Plumbob-Launcher-{version}-windows-x64-setup.exe"),
+            url: "fake://installer".into(),
+            sig_url: "fake://installer.sig".into(),
+            size: 3_200_000,
+        }),
+        version,
+    })
+}
+
+fn fetch_update() -> Result<Option<s4im_engine::UpdateInfo>, String> {
+    use std::io::Read;
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(6)).user_agent("Plumbob-Launcher").build();
+    let response = agent
+        .get(s4im_engine::RELEASES_API)
+        .set("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|_| "err.updateCheck".to_string())?;
+    let mut body = String::new();
+    response.into_reader().take(4 * 1024 * 1024).read_to_string(&mut body).map_err(|_| "err.updateCheck".to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&body).map_err(|_| "err.updateCheck".to_string())?;
+    Ok(s4im_engine::pick_update(&value, env!("CARGO_PKG_VERSION")))
+}
+
+#[tauri::command]
+async fn check_update(force: bool, lang: Option<String>) -> Result<Option<s4im_engine::UpdateInfo>, String> {
+    blocking(move || {
+        let lang = lang.unwrap_or_else(|| "en".into());
+        if let Some(fake) = fake_update(&lang) {
+            return Ok(Some(fake));
+        }
+        let cached = UPDATE_CACHE.lock().ok().and_then(|cache| {
+            cache.as_ref().and_then(|(at, found)| (at.elapsed() < UPDATE_TTL && (!force || at.elapsed() < Duration::from_secs(20))).then(|| found.clone()))
+        });
+        let found = match cached {
+            Some(found) => found,
+            None => {
+                let found = fetch_update()?;
+                if let Ok(mut cache) = UPDATE_CACHE.lock() {
+                    *cache = Some((std::time::Instant::now(), found.clone()));
+                }
+                found
+            }
+        };
+        Ok(found.map(|mut info| {
+            info.notes = news::localized_notes(&info.version, &lang, &info.notes);
+            info
+        }))
+    })
+    .await
+}
+
+fn installed_with_setup() -> bool {
+    if cfg!(debug_assertions) {
+        return false;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").is_file()))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn install_method() -> &'static str {
+    if std::env::var_os("PLUMBOB_FAKE_UPDATE").is_some() || installed_with_setup() {
+        "installer"
+    } else {
+        "portable"
+    }
+}
+
+fn download(agent: &ureq::Agent, url: &str, limit: u64, on_bytes: &mut dyn FnMut(u64, u64)) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let response = agent.get(url).call().map_err(|_| "err.updateDownload".to_string())?;
+    let total = response.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    if total > limit {
+        return Err("err.updateDownload".into());
+    }
+    let mut reader = response.into_reader().take(limit + 1);
+    let mut data = Vec::with_capacity(total as usize);
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf).map_err(|_| "err.updateDownload".to_string())?;
+        if n == 0 {
+            break;
+        }
+        data.extend_from_slice(&buf[..n]);
+        if data.len() as u64 > limit {
+            return Err("err.updateDownload".into());
+        }
+        on_bytes(data.len() as u64, total);
+    }
+    Ok(data)
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle, installer: s4im_engine::UpdateAsset, version: String) -> Result<(), String> {
+    blocking(move || {
+        let emit = |done: u64, total: u64| {
+            let _ = app.emit("update-progress", ShotsProgress { done: done as usize, total: total as usize });
+        };
+        if installer.url.starts_with("fake://") {
+            for step in 0..=10u64 {
+                emit(step * 320_000, 3_200_000);
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            return Ok(());
+        }
+        if !installed_with_setup() {
+            return Err("err.updatePortable".into());
+        }
+        if !s4im_engine::is_trusted_download(&installer.url) || !s4im_engine::is_trusted_download(&installer.sig_url) {
+            return Err("err.updateDownload".into());
+        }
+        let clean: String = version.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+        let agent = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(10)).timeout_read(Duration::from_secs(30)).user_agent("Plumbob-Launcher").build();
+        let signature = download(&agent, &installer.sig_url, 64 * 1024, &mut |_, _| {})?;
+        let signature = String::from_utf8(signature).map_err(|_| "err.updateSignature".to_string())?;
+        emit(0, installer.size);
+        let mut last = std::time::Instant::now() - Duration::from_secs(1);
+        let data = download(&agent, &installer.url, MAX_INSTALLER_BYTES, &mut |done, total| {
+            if last.elapsed() >= Duration::from_millis(80) {
+                last = std::time::Instant::now();
+                emit(done, if total > 0 { total } else { installer.size });
+            }
+        })?;
+        emit(data.len() as u64, data.len() as u64);
+        if !s4im_engine::verify_signature(s4im_engine::UPDATER_PUBKEY, &signature, &data) {
+            return Err("err.updateSignature".into());
+        }
+        let dir = std::env::temp_dir().join(format!("plumbob-update-{clean}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let file_name = std::path::Path::new(&installer.name).file_name().map(|n| n.to_owned()).ok_or_else(|| "err.updateDownload".to_string())?;
+        let path = dir.join(file_name);
+        std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+        std::process::Command::new(&path).args(["/P", "/R", "/UPDATE"]).spawn().map_err(|e| e.to_string())?;
+        std::thread::sleep(Duration::from_millis(400));
+        app.exit(0);
+        Ok(())
+    })
+    .await
+}
+
+const UI_SCALE_MIN: u32 = 70;
+const UI_SCALE_MAX: u32 = 130;
+const UI_BASE: (f64, f64) = (1040.0, 680.0);
+const UI_COMFORT: (f64, f64) = (1240.0, 820.0);
+
+fn auto_scale_percent(window: &tauri::WebviewWindow) -> u32 {
+    let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return 100 };
+    let factor = monitor.scale_factor().max(0.5);
+    let area = monitor.work_area();
+    let (width, height) = (area.size.width as f64 / factor, area.size.height as f64 / factor);
+    let fit = (width / UI_COMFORT.0).min(height / UI_COMFORT.1).min(1.0);
+    (((fit * 20.0).floor() * 5.0) as u32).clamp(UI_SCALE_MIN, 100)
+}
+
+fn apply_ui_scale(window: &tauri::WebviewWindow, percent: u32) -> u32 {
+    let percent = percent.clamp(UI_SCALE_MIN, UI_SCALE_MAX);
+    let zoom = percent as f64 / 100.0;
+    let _ = window.set_zoom(zoom);
+    let k = zoom.min(1.0);
+    let _ = window.set_min_size(Some(tauri::LogicalSize::new(UI_BASE.0 * k, UI_BASE.1 * k)));
+    percent
+}
+
+#[tauri::command]
+fn set_ui_scale(window: tauri::WebviewWindow, percent: Option<u32>) -> u32 {
+    let wanted = percent.unwrap_or_else(|| auto_scale_percent(&window));
+    apply_ui_scale(&window, wanted)
+}
+
+fn instance_mods(cfg: &Config, code: &str) -> Result<(PathBuf, PathBuf), String> {
+    if !s4im_engine::valid_code(code) {
+        return Err("err.codeInvalid".into());
+    }
+    let dir = s4im_engine::instance_dir(&cfg.game_root, code);
+    if !dir.is_dir() {
+        return Err(text(EngineError::NotFound(code.to_string())));
+    }
+    let mods = s4im_engine::find_child(&dir, "Mods").unwrap_or_else(|| dir.join("Mods"));
+    Ok((dir, mods))
+}
+
+#[tauri::command]
+async fn no_intro_status(code: String) -> Result<bool, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let (dir, mods) = instance_mods(&cfg, &code)?;
+        Ok(s4im_engine::no_intro_installed(&dir, &mods).is_some())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn install_no_intro(code: String) -> Result<String, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let (dir, mods) = instance_mods(&cfg, &code)?;
+        if let Some(existing) = s4im_engine::no_intro_installed(&dir, &mods) {
+            return Ok(existing.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+        let bytes = netfetch::fetch_bytes(s4im_engine::NO_INTRO_URL, s4im_engine::NO_INTRO_MAX_BYTES).map_err(|_| "err.noIntro".to_string())?;
+        let name = s4im_engine::extract_no_intro(&bytes, &mods).map_err(text)?;
+        s4im_engine::record_no_intro(&dir, &name).map_err(text)?;
+        Ok(name)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn remove_no_intro(code: String) -> Result<bool, String> {
+    blocking(move || {
+        let cfg = config()?;
+        let (dir, mods) = instance_mods(&cfg, &code)?;
+        s4im_engine::remove_no_intro(&dir, &mods).map_err(text)
     })
     .await
 }
@@ -473,7 +922,7 @@ async fn instance_health(code: String) -> Result<Health, String> {
 fn game_version() -> Result<Option<String>, String> {
     let s = settings()?;
     let root = s.install_dir.clone().or_else(|| s4im_engine::detect_install_dir(s.platform));
-    Ok(root.and_then(|r| s4im_engine::read_install_version(&r)))
+    Ok(root.and_then(|r| s4im_engine::read_install_version(&s4im_engine::resolve_game_root(&r).unwrap_or(r))))
 }
 
 fn guard_instance(cfg: &Config, code: &str) -> Result<PathBuf, String> {
@@ -776,6 +1225,7 @@ async fn profile_info(app: AppHandle, source: Option<String>) -> Result<ProfileI
         let chosen = source.unwrap_or_else(|| s.profile.source.clone());
         let image = match chosen.as_str() {
             "custom" => s.profile.custom.filter(|p| p.is_file()),
+            "sim" => s.profile.sim.filter(|p| p.is_file()),
             "none" => None,
             _ => windows_picture(),
         };
@@ -941,7 +1391,7 @@ fn launch_tool(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn import_icon(app: AppHandle, name: String, path: String) -> Result<String, String> {
     blocking(move || {
-        let valid = name == "profile" || s4im_engine::valid_code(&name);
+        let valid = name == "profile" || name == "profile-sim" || s4im_engine::valid_code(&name) || name.strip_prefix("banner-").is_some_and(s4im_engine::valid_code);
         if !valid {
             return Err("err.codeInvalid".into());
         }
@@ -1247,6 +1697,17 @@ fn main() {
     log_panics();
     presence::start();
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let saved = settings().ok();
+                let wanted = match saved {
+                    Some(s) if !s.ui_auto => s.ui_scale,
+                    _ => auto_scale_percent(&window),
+                };
+                apply_ui_scale(&window, wanted);
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -1303,6 +1764,25 @@ fn main() {
             disable_tray_sync,
             register_main,
             tray_old_info,
+            scan_base,
+            set_ui_scale,
+            no_intro_status,
+            install_no_intro,
+            remove_no_intro,
+            check_update,
+            news::fetch_announcements,
+            install_method,
+            install_update,
+            lan_host_start,
+            lan_host_stop,
+            lan_host_status,
+            lan_host_answer,
+            lan_host_forget,
+            lan_addresses,
+            lan_diff,
+            lan_sync,
+            list_mod_dir,
+            derive_instance,
             delete_tray_old,
             import_instance,
             create_instance,

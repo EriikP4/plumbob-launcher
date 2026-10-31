@@ -119,3 +119,14 @@ fn install_detection_needs_the_game_executable() {
     assert!(candidate_install_dirs(Platform::Custom).is_empty());
     assert!(detect_install_dir(Platform::Custom).is_none());
 }
+
+#[test]
+fn only_known_game_arguments_are_used_and_windowed_excludes_fullscreen() {
+    let mut s = s4im_engine::Settings::default();
+    s.game_args = vec!["-w".into(), "-f".into(), "-nointro".into(), "--no_tutorials".into(), "-nointro".into(), "-rm -rf".into(), "-nohovereffects".into()];
+    assert_eq!(s4im_engine::effective_game_args(&s), vec!["-w", "-nointro", "-nohovereffects"]);
+    s.game_args = vec!["-f".into(), "-w".into()];
+    assert_eq!(s4im_engine::effective_game_args(&s), vec!["-f"]);
+    s.game_args.clear();
+    assert!(s4im_engine::effective_game_args(&s).is_empty());
+}
